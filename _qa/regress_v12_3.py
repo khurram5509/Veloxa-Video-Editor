@@ -618,7 +618,7 @@ from app.updater import (
 )
 
 # Version is correctly bumped.
-check("APP_VERSION = '13.0.1'", _APP_VERSION == "13.0.1",
+check("APP_VERSION = '13.1.0'", _APP_VERSION == "13.1.0",
       f"got {_APP_VERSION!r}")
 check("GITHUB_REPO is khurram5509/Veloxa-Video-Editor",
       _u.GITHUB_REPO == "khurram5509/Veloxa-Video-Editor",
@@ -642,7 +642,7 @@ check("'v' prefix tolerated either side",
       _vc("v13.0", "V13.0") == 0)
 
 # is_newer convenience.
-check("is_newer('13.0.1', '13.0')", _newer("13.0.1", "13.0"))
+check("is_newer('13.1.0', '13.0')", _newer("13.1.0", "13.0"))
 check("not is_newer('12.9.99', '13.0')",
       not _newer("12.9.99", "13.0"))
 check("not is_newer('13.0', '13.0')",
@@ -725,22 +725,82 @@ check("docs.py advertises auto-update feature",
 
 # Installer.iss + build.ps1 carry the new version.
 iss_src = open(ROOT / "installer.iss", encoding="utf-8").read()
-check("installer.iss AppVersion = 13.0.1", '"13.0.1"' in iss_src)
-check("installer.iss EXE name = V13.0.1.exe",
-      "Veloxa-Video-Editor-V13.0.1.exe" in iss_src)
+check("installer.iss AppVersion = 13.1.0", '"13.1.0"' in iss_src)
+check("installer.iss EXE name = V13.1.0.exe",
+      "Veloxa-Video-Editor-V13.1.0.exe" in iss_src)
 check("installer.iss preserves stable AppId across V12 -> V13",
       "F2E1A8C4-1E5B-4C9A-9B27-VELOXA-VID-V121" in iss_src)
 ps1_src = open(ROOT / "build.ps1", encoding="utf-8").read()
-check("build.ps1 builds V13.0.1 EXE",
-      "Veloxa-Video-Editor-V13.0.1" in ps1_src)
+check("build.ps1 builds V13.1.0 EXE",
+      "Veloxa-Video-Editor-V13.1.0" in ps1_src)
 
-# V13.0.1 crash-fix: stale C++-object guard in _start_update_check.
+# V13.1.0 crash-fix: stale C++-object guard in _start_update_check.
 mw_src2 = open(ROOT / "app" / "main_window.py", encoding="utf-8").read()
 check("_start_update_check guards RuntimeError on stale wrapper",
       "except RuntimeError" in mw_src2
       and "self._update_checker = None" in mw_src2)
 check("_on_update_checker_finished clears the Python ref",
       "_on_update_checker_finished" in mw_src2)
+
+
+# ===========================================================================
+# 13. V13.1.0: System / Light / Dark theme switcher
+# ===========================================================================
+section("V13.1.0: theme switcher")
+
+from app.theme import (
+    DARK_QSS, LIGHT_QSS,
+    THEME_SYSTEM as _TSYS, THEME_LIGHT as _TLIGHT,
+    THEME_DARK as _TDARK, THEME_MODES as _TMODES,
+    detect_system_theme as _dst, resolve_theme_mode as _rtm,
+    apply_theme as _apt,
+)
+
+check("THEME_MODES includes system / light / dark",
+      set(_TMODES) == {"system", "light", "dark"},
+      str(_TMODES))
+check("DARK_QSS and LIGHT_QSS are non-trivial strings",
+      isinstance(DARK_QSS, str) and isinstance(LIGHT_QSS, str)
+      and len(DARK_QSS) > 1000 and len(LIGHT_QSS) > 1000)
+check("DARK_QSS and LIGHT_QSS differ (not a copy/paste)",
+      DARK_QSS != LIGHT_QSS)
+
+# Brand accent appears in both themes.
+check("dark theme uses brand orange",  "#f58220" in DARK_QSS)
+check("light theme uses brand orange", "#f58220" in LIGHT_QSS)
+
+# System detector returns a valid concrete mode.
+sys_mode = _dst()
+check("detect_system_theme() in {light, dark}", sys_mode in ("light", "dark"))
+
+# resolve_theme_mode collapses "system" to a concrete mode.
+check("resolve_theme_mode('system') -> concrete",
+      _rtm("system") in ("light", "dark"))
+check("resolve_theme_mode('light') == 'light'",
+      _rtm("light") == "light")
+check("resolve_theme_mode('dark') == 'dark'",
+      _rtm("dark") == "dark")
+check("resolve_theme_mode('garbage') falls back to dark",
+      _rtm("garbage_value") == "dark")
+
+# GUI wiring: main_window imports the theme helpers and exposes the menu.
+mw_src3 = open(ROOT / "app" / "main_window.py", encoding="utf-8").read()
+check("main_window imports theme switcher symbols",
+      "from .theme import" in mw_src3 and "apply_theme" in mw_src3
+      and "THEME_SYSTEM" in mw_src3)
+check("Appearance submenu added to menu bar",
+      'mb.addMenu("Appearance")' in mw_src3
+      and "System (follow Windows)" in mw_src3
+      and "QActionGroup" in mw_src3)
+check("_set_theme_mode handler exists",
+      "_set_theme_mode" in mw_src3 and "settings.setValue(\"theme_mode\"" in mw_src3)
+
+# Boot path: main.py reads theme_mode from QSettings and applies.
+main_src = open(ROOT / "main.py", encoding="utf-8").read()
+check("main.py uses apply_theme() instead of hardcoded DARK_QSS",
+      "apply_theme(app" in main_src and "DARK_QSS" not in main_src)
+check("main.py reads theme_mode from QSettings",
+      'theme_mode' in main_src)
 
 
 # ===========================================================================

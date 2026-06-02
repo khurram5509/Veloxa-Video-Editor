@@ -11,7 +11,8 @@ from pathlib import Path
 
 from PyQt6.QtCore import Qt, QSettings, QSize, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import (
-    QAction, QColor, QFont, QIcon, QKeySequence, QPixmap, QShortcut,
+    QAction, QActionGroup, QColor, QFont, QIcon, QKeySequence, QPixmap,
+    QShortcut,
 )
 from PyQt6.QtWidgets import (
     QApplication, QCheckBox, QColorDialog, QComboBox, QDoubleSpinBox,
@@ -40,6 +41,11 @@ from .updater import (
     GITHUB_REPO as VELOXA_GITHUB_REPO,
     UpdateChecker, UpdateInfo,
     download_installer, launch_installer_and_quit,
+)
+# V13.1: System / Light / Dark theme switcher.
+from .theme import (
+    apply_theme, resolve_theme_mode,
+    THEME_SYSTEM, THEME_LIGHT, THEME_DARK, THEME_MODES,
 )
 
 
@@ -1421,6 +1427,48 @@ class MainWindow(QMainWindow):
             act = QAction(label, self)
             act.triggered.connect(slot)
             mb.addAction(act)
+
+        # V13.1: Appearance submenu — System / Light / Dark. Wrapped in
+        # a QActionGroup so the choices are mutually exclusive radio
+        # items. Default reads from QSettings (falls back to "system").
+        appearance = mb.addMenu("Appearance")
+        self._theme_group = QActionGroup(self)
+        self._theme_group.setExclusive(True)
+        current_mode = self.settings.value("theme_mode", THEME_SYSTEM)
+        if current_mode not in THEME_MODES:
+            current_mode = THEME_SYSTEM
+        for mode, label in [
+            (THEME_SYSTEM, "System (follow Windows)"),
+            (THEME_LIGHT,  "Light"),
+            (THEME_DARK,   "Dark"),
+        ]:
+            act = QAction(label, self, checkable=True)
+            act.setData(mode)
+            act.setChecked(mode == current_mode)
+            act.triggered.connect(
+                lambda _checked=False, m=mode: self._set_theme_mode(m))
+            self._theme_group.addAction(act)
+            appearance.addAction(act)
+
+    # ====================================================== V13.1 theme
+
+    def _set_theme_mode(self, mode: str):
+        """Apply ``mode`` (one of THEME_SYSTEM/LIGHT/DARK) to the running
+        QApplication and persist the choice. Triggered from the
+        Appearance submenu."""
+        if mode not in THEME_MODES:
+            mode = THEME_SYSTEM
+        app = QApplication.instance()
+        if app is None:
+            return
+        apply_theme(app, mode)
+        self.settings.setValue("theme_mode", mode)
+        resolved = resolve_theme_mode(mode)
+        if mode == THEME_SYSTEM:
+            label = f"System ({resolved})"
+        else:
+            label = mode.capitalize()
+        self.status_lbl.setText(f"Theme: {label}")
 
     # ====================================================== V13.0 auto-update
 

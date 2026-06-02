@@ -33,11 +33,12 @@ def main():
         sys.exit(run_cli(argv))
 
     # GUI mode.
+    from PyQt6.QtCore import QSettings
     from PyQt6.QtGui import QFont
     from PyQt6.QtWidgets import QApplication
     from app.main_window import MainWindow
     from app.persistence import setup_logging, prune_old_logs
-    from app.theme import DARK_QSS
+    from app.theme import apply_theme, THEME_SYSTEM
 
     log_file = setup_logging()
     prune_old_logs(keep=30)
@@ -45,7 +46,11 @@ def main():
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     app.setFont(QFont("Segoe UI", 9))
-    app.setStyleSheet(DARK_QSS)
+    # V13.1: System / Light / Dark theme switcher. Default is "system"
+    # so a fresh install on Windows light-mode looks native; the user
+    # can override via the View menu.
+    s = QSettings("Veloxa-VD", "V10")
+    apply_theme(app, s.value("theme_mode", THEME_SYSTEM))
 
     icon = _load_icon()
     app.setWindowIcon(icon)

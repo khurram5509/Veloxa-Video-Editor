@@ -1,69 +1,115 @@
-"""Visual theme: QSS stylesheet, color tokens, time/ETA formatters, runtime icon."""
+"""Visual theme: QSS stylesheets (dark + light), system-theme detection,
+time/ETA formatters, runtime icon.
+
+V13.1: refreshed design + System / Light / Dark theme switcher.
+
+Public surface for the rest of the app:
+
+* :data:`DARK_QSS`, :data:`LIGHT_QSS` — full Qt stylesheets.
+* :func:`detect_system_theme` — ``"dark"`` or ``"light"``, derived from the
+  Windows registry's ``AppsUseLightTheme`` key (falls back to dark on any
+  platform / error).
+* :func:`resolve_theme_mode` — collapses ``"system"`` into ``"dark"`` or
+  ``"light"`` so the caller can use a single switch.
+* :func:`apply_theme` — given a ``QApplication`` and a mode string,
+  applies the right stylesheet.
+
+The brand accent (orange) is preserved across both themes so the app is
+recognisably Veloxa whichever variant the user picks.
+"""
 from __future__ import annotations
+
+import logging
+import sys
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 
+log = logging.getLogger("veloxa.theme")
 
-# Brand palette (orange accent inspired by the VeloxaLAB logo).
+
+# ============================================================ brand palette
+
+# Orange accent inspired by the VeloxaLAB logo. Used by both themes.
 BRAND_ACCENT = "#f58220"
 BRAND_ACCENT_HOVER = "#ff9a3d"
 BRAND_ACCENT_DARK = "#d66e10"
 BRAND_HANDLE = "#fbbf24"
 
+# Theme mode strings. Persisted in QSettings under ``theme_mode``.
+THEME_SYSTEM = "system"
+THEME_DARK = "dark"
+THEME_LIGHT = "light"
+THEME_MODES = (THEME_SYSTEM, THEME_DARK, THEME_LIGHT)
+
+
+# ============================================================ DARK QSS
+#
+# V13.1 design refresh: deeper-but-warmer panel background, softer
+# borders, accent-coloured focus ring on all editable widgets, calmer
+# button hover state, refined tab look.
 
 DARK_QSS = """
-QMainWindow, QWidget { background-color: #2a2d33; color: #e6e6e6; }
-QLabel { color: #e6e6e6; }
-QLabel[role="muted"] { color: #8a8e96; }
-QLabel[role="title"] { font-size: 18pt; font-weight: 800; color: #ffffff; }
-QLabel[role="subtitle"] { color: #f58220; font-size: 9pt; font-weight: 600; }
+/* ---- base ---- */
+QMainWindow, QWidget {
+    background-color: #23262d;
+    color: #e8e9ec;
+}
+QLabel { color: #e8e9ec; }
+QLabel[role="muted"]    { color: #8b909a; }
+QLabel[role="title"]    { font-size: 18pt; font-weight: 800; color: #ffffff;
+                          letter-spacing: 0.5px; }
+QLabel[role="subtitle"] { color: #f58220; font-size: 9pt; font-weight: 700;
+                          letter-spacing: 0.4px; }
 
+/* ---- group boxes ---- */
 QGroupBox {
-    background: #353841;
-    border: 1px solid #454952;
-    border-radius: 8px;
-    margin-top: 14px;
-    padding: 10px 8px 8px 8px;
+    background: #2d313a;
+    border: 1px solid #3d424e;
+    border-radius: 10px;
+    margin-top: 16px;
+    padding: 12px 10px 10px 10px;
     font-weight: 600;
-    color: #e6e6e6;
+    color: #e8e9ec;
 }
 QGroupBox::title {
     subcontrol-origin: margin;
     subcontrol-position: top left;
-    left: 12px;
+    left: 14px;
     padding: 0 8px;
     color: #f58220;
 }
 
+/* ---- buttons ---- */
 QPushButton {
-    background: #454952;
-    color: #e6e6e6;
-    border: 1px solid #555a64;
-    border-radius: 5px;
+    background: #3a3f4a;
+    color: #e8e9ec;
+    border: 1px solid #4b505c;
+    border-radius: 6px;
     padding: 6px 14px;
     min-height: 22px;
 }
-QPushButton:hover { background: #555a64; border-color: #6a6f79; }
-QPushButton:pressed { background: #3a3e47; }
-QPushButton:disabled { background: #2e3138; color: #6a6f79; border-color: #3e424a; }
+QPushButton:hover    { background: #454b59; border-color: #5d6471; }
+QPushButton:pressed  { background: #2f343e; }
+QPushButton:disabled { background: #2a2d34; color: #6a6f79; border-color: #383c45; }
 
 QPushButton#primary {
     background: #f58220; color: #1a1a1a; border: none; font-weight: 700;
 }
-QPushButton#primary:hover { background: #ff9a3d; }
-QPushButton#primary:pressed { background: #d66e10; }
+QPushButton#primary:hover    { background: #ff9a3d; }
+QPushButton#primary:pressed  { background: #d66e10; }
 QPushButton#primary:disabled { background: #5a3a1a; color: #888; }
 
-QPushButton#danger { background: #b85a5a; color: #fff; border: none; }
-QPushButton#danger:hover { background: #c66a6a; }
+QPushButton#danger          { background: #b95252; color: #fff; border: none; }
+QPushButton#danger:hover    { background: #c96363; }
 QPushButton#danger:disabled { background: #3a2a2a; color: #888; }
 
+/* ---- inputs ---- */
 QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
-    background: #2a2d33;
-    color: #e6e6e6;
-    border: 1px solid #454952;
-    border-radius: 5px;
+    background: #1d2026;
+    color: #e8e9ec;
+    border: 1px solid #3d424e;
+    border-radius: 6px;
     padding: 4px 8px;
     min-height: 22px;
     selection-background-color: #f58220;
@@ -74,38 +120,36 @@ QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
 }
 QComboBox::drop-down { border: none; width: 18px; }
 QComboBox QAbstractItemView {
-    background: #2a2d33;
-    color: #e6e6e6;
-    border: 1px solid #454952;
+    background: #1d2026;
+    color: #e8e9ec;
+    border: 1px solid #3d424e;
     selection-background-color: #f58220;
     selection-color: #1a1a1a;
 }
 
+/* ---- list / queue ---- */
 QListWidget {
-    background: #232529;
-    color: #e6e6e6;
-    border: 1px solid #454952;
-    border-radius: 5px;
+    background: #1a1d22;
+    color: #e8e9ec;
+    border: 1px solid #3d424e;
+    border-radius: 6px;
     padding: 2px;
 }
-QListWidget::item { padding: 6px 8px; }
-QListWidget::item:hover { background: #2c3036; }
-QListWidget::item:selected { background: #6a3d10; color: #ffffff; }
-/* `:selected:hover` has higher specificity than `:hover` alone, so the
- * selection highlight stays visible when the mouse moves over a selected
- * row. Without this rule, hover overwrites the orange selection background
- * and the row looks unselected the moment you mouse over it. */
+QListWidget::item                { padding: 6px 8px; }
+QListWidget::item:hover          { background: #262a31; }
+QListWidget::item:selected       { background: #6a3d10; color: #ffffff; }
 QListWidget::item:selected:hover { background: #7a4520; color: #ffffff; }
 QListWidget::item:selected:!active { background: #4a3010; color: #ffffff; }
-QListWidget:focus { border: 1px solid #f58220; }
+QListWidget:focus                { border: 1px solid #f58220; }
 
+/* ---- slider ---- */
 QSlider::groove:horizontal {
-    background: #2a2d33;
+    background: #1d2026;
     height: 6px;
     border-radius: 3px;
 }
 QSlider::sub-page:horizontal { background: #f58220; border-radius: 3px; }
-QSlider::add-page:horizontal { background: #454952; border-radius: 3px; }
+QSlider::add-page:horizontal { background: #3d424e; border-radius: 3px; }
 QSlider::handle:horizontal {
     background: #ffffff;
     width: 14px;
@@ -115,23 +159,20 @@ QSlider::handle:horizontal {
 }
 QSlider::handle:horizontal:hover { background: #ffe5cc; }
 
+/* ---- progress ---- */
 QProgressBar {
-    background: #232529;
-    border: 1px solid #454952;
-    border-radius: 5px;
+    background: #1a1d22;
+    border: 1px solid #3d424e;
+    border-radius: 6px;
     text-align: center;
-    color: #e6e6e6;
+    color: #e8e9ec;
     height: 18px;
 }
-QProgressBar::chunk { background: #f58220; border-radius: 4px; }
+QProgressBar::chunk { background: #f58220; border-radius: 5px; }
 
-/* V12.1 improvement: status-colored slim per-row progress bar. The
- * dynamic `state` property is set in _refresh_row_widget; restyle
- * after polish/unpolish so colour swaps when the row's status moves
- * encoding -> done / failed / cancelled. */
 QProgressBar[role="queue-row-progress"] {
-    background: #1f2125;
-    border: 1px solid #353940;
+    background: #161920;
+    border: 1px solid #2e3138;
     border-radius: 3px;
     height: 12px;
     padding: 0;
@@ -145,53 +186,62 @@ QProgressBar[role="queue-row-progress"][state="failed"]::chunk
 QProgressBar[role="queue-row-progress"][state="cancelled"]::chunk
     { background: #6b6f78; border-radius: 2px; }
 
+/* ---- tabs ---- */
 QTabWidget::pane {
-    border: 1px solid #454952;
-    border-radius: 6px;
-    background: #353841;
+    border: 1px solid #3d424e;
+    border-radius: 8px;
+    background: #2d313a;
     top: -1px;
 }
 QTabBar::tab {
-    background: #2a2d33;
-    color: #aaa;
+    background: #23262d;
+    color: #9aa0aa;
     padding: 7px 16px;
-    border: 1px solid #454952;
+    border: 1px solid #3d424e;
     border-bottom: none;
-    border-top-left-radius: 5px;
-    border-top-right-radius: 5px;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
     margin-right: 2px;
 }
-QTabBar::tab:selected { background: #353841; color: #f58220; font-weight: 600; }
-QTabBar::tab:hover { color: #ffffff; }
+QTabBar::tab:selected { background: #2d313a; color: #f58220; font-weight: 700; }
+QTabBar::tab:hover    { color: #ffffff; }
 
+/* ---- tooltip ---- */
 QToolTip {
-    background: #1e1e1e;
-    color: #e6e6e6;
-    border: 1px solid #454952;
-    padding: 4px;
+    background: #15171c;
+    color: #e8e9ec;
+    border: 1px solid #3d424e;
+    border-radius: 4px;
+    padding: 5px 7px;
 }
 
-QSplitter::handle { background: #2a2d33; }
-QSplitter::handle:horizontal { width: 4px; }
-QSplitter::handle:hover { background: #f58220; }
+/* ---- splitter ---- */
+QSplitter::handle             { background: #23262d; }
+QSplitter::handle:horizontal  { width: 4px; }
+QSplitter::handle:hover       { background: #f58220; }
 
+/* ---- preview frame ---- */
 QFrame#preview {
     background: #0c0e12;
-    border: 1px solid #454952;
-    border-radius: 6px;
+    border: 1px solid #3d424e;
+    border-radius: 8px;
 }
 
+/* ---- menus ---- */
 QMenu {
-    background: #2a2d33;
-    color: #e6e6e6;
-    border: 1px solid #454952;
+    background: #23262d;
+    color: #e8e9ec;
+    border: 1px solid #3d424e;
+    padding: 4px 0;
 }
+QMenu::item { padding: 5px 22px; }
 QMenu::item:selected { background: #f58220; color: #1a1a1a; }
+QMenu::separator { height: 1px; background: #3d424e; margin: 4px 8px; }
 
 QMenuBar {
-    background: #232529;
-    color: #e6e6e6;
-    border-bottom: 1px solid #454952;
+    background: #1a1d22;
+    color: #e8e9ec;
+    border-bottom: 1px solid #3d424e;
     padding: 2px;
 }
 QMenuBar::item {
@@ -200,32 +250,392 @@ QMenuBar::item {
     border-radius: 4px;
 }
 QMenuBar::item:selected { background: #f58220; color: #1a1a1a; }
-QMenuBar::item:pressed { background: #d66e10; color: #1a1a1a; }
+QMenuBar::item:pressed  { background: #d66e10; color: #1a1a1a; }
 
+/* ---- text browser (README dialogs etc.) ---- */
 QTextBrowser {
-    background: #232529;
-    color: #e6e6e6;
-    border: 1px solid #454952;
-    border-radius: 5px;
-    padding: 10px;
+    background: #1a1d22;
+    color: #e8e9ec;
+    border: 1px solid #3d424e;
+    border-radius: 6px;
+    padding: 12px;
     selection-background-color: #f58220;
     selection-color: #1a1a1a;
 }
 QTextBrowser a { color: #f58220; }
 
+/* ---- checkbox ---- */
 QCheckBox::indicator {
     width: 16px;
     height: 16px;
-    border: 1px solid #555a64;
+    border: 1px solid #4b505c;
     border-radius: 3px;
-    background: #2a2d33;
+    background: #1d2026;
 }
 QCheckBox::indicator:checked {
     background: #f58220;
     border-color: #f58220;
 }
+QCheckBox::indicator:hover { border-color: #f58220; }
+
+/* ---- scrollbars (subtle, dark-on-dark) ---- */
+QScrollBar:vertical {
+    background: #1a1d22;
+    width: 12px;
+    border-left: 1px solid #2e3138;
+}
+QScrollBar::handle:vertical {
+    background: #3d424e;
+    border-radius: 4px;
+    min-height: 24px;
+    margin: 2px;
+}
+QScrollBar::handle:vertical:hover { background: #555a64; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+QScrollBar:horizontal {
+    background: #1a1d22;
+    height: 12px;
+    border-top: 1px solid #2e3138;
+}
+QScrollBar::handle:horizontal {
+    background: #3d424e;
+    border-radius: 4px;
+    min-width: 24px;
+    margin: 2px;
+}
+QScrollBar::handle:horizontal:hover { background: #555a64; }
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
 """
 
+
+# ============================================================ LIGHT QSS
+#
+# A bright, calm light theme keyed to the same orange accent. Neutral
+# warm-gray surfaces (avoiding pure white which is harsh under prolonged
+# editing) and a darker text colour. Selection / focus / hover use the
+# same brand colour as dark mode so a user switching between modes sees
+# consistent emphasis cues.
+
+LIGHT_QSS = """
+/* ---- base ---- */
+QMainWindow, QWidget {
+    background-color: #f4f5f7;
+    color: #1f232b;
+}
+QLabel { color: #1f232b; }
+QLabel[role="muted"]    { color: #6b7280; }
+QLabel[role="title"]    { font-size: 18pt; font-weight: 800; color: #111418;
+                          letter-spacing: 0.5px; }
+QLabel[role="subtitle"] { color: #d66e10; font-size: 9pt; font-weight: 700;
+                          letter-spacing: 0.4px; }
+
+/* ---- group boxes ---- */
+QGroupBox {
+    background: #ffffff;
+    border: 1px solid #d9dde3;
+    border-radius: 10px;
+    margin-top: 16px;
+    padding: 12px 10px 10px 10px;
+    font-weight: 600;
+    color: #1f232b;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 14px;
+    padding: 0 8px;
+    color: #d66e10;
+    background: #ffffff;
+}
+
+/* ---- buttons ---- */
+QPushButton {
+    background: #ffffff;
+    color: #1f232b;
+    border: 1px solid #cbd0d8;
+    border-radius: 6px;
+    padding: 6px 14px;
+    min-height: 22px;
+}
+QPushButton:hover    { background: #f1f3f6; border-color: #a8aebb; }
+QPushButton:pressed  { background: #e5e8ed; }
+QPushButton:disabled { background: #ecedf0; color: #a5aab2; border-color: #dcdfe5; }
+
+QPushButton#primary {
+    background: #f58220; color: #ffffff; border: none; font-weight: 700;
+}
+QPushButton#primary:hover    { background: #ff9a3d; }
+QPushButton#primary:pressed  { background: #d66e10; }
+QPushButton#primary:disabled { background: #f7c89a; color: #ffffff; }
+
+QPushButton#danger          { background: #d04646; color: #fff; border: none; }
+QPushButton#danger:hover    { background: #de5b5b; }
+QPushButton#danger:disabled { background: #f0bcbc; color: #fff; }
+
+/* ---- inputs ---- */
+QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
+    background: #ffffff;
+    color: #1f232b;
+    border: 1px solid #cbd0d8;
+    border-radius: 6px;
+    padding: 4px 8px;
+    min-height: 22px;
+    selection-background-color: #f58220;
+    selection-color: #ffffff;
+}
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
+    border-color: #f58220;
+}
+QComboBox::drop-down { border: none; width: 18px; }
+QComboBox QAbstractItemView {
+    background: #ffffff;
+    color: #1f232b;
+    border: 1px solid #cbd0d8;
+    selection-background-color: #f58220;
+    selection-color: #ffffff;
+}
+
+/* ---- list / queue ---- */
+QListWidget {
+    background: #ffffff;
+    color: #1f232b;
+    border: 1px solid #d9dde3;
+    border-radius: 6px;
+    padding: 2px;
+}
+QListWidget::item                { padding: 6px 8px; }
+QListWidget::item:hover          { background: #f1f3f6; }
+QListWidget::item:selected       { background: #ffe1c2; color: #1f232b; }
+QListWidget::item:selected:hover { background: #ffd4a8; color: #1f232b; }
+QListWidget::item:selected:!active { background: #fff0dc; color: #1f232b; }
+QListWidget:focus                { border: 1px solid #f58220; }
+
+/* ---- slider ---- */
+QSlider::groove:horizontal {
+    background: #d9dde3;
+    height: 6px;
+    border-radius: 3px;
+}
+QSlider::sub-page:horizontal { background: #f58220; border-radius: 3px; }
+QSlider::add-page:horizontal { background: #d9dde3; border-radius: 3px; }
+QSlider::handle:horizontal {
+    background: #ffffff;
+    width: 14px;
+    margin: -5px 0;
+    border-radius: 7px;
+    border: 1px solid #f58220;
+}
+QSlider::handle:horizontal:hover { background: #ffe5cc; }
+
+/* ---- progress ---- */
+QProgressBar {
+    background: #ffffff;
+    border: 1px solid #d9dde3;
+    border-radius: 6px;
+    text-align: center;
+    color: #1f232b;
+    height: 18px;
+}
+QProgressBar::chunk { background: #f58220; border-radius: 5px; }
+
+QProgressBar[role="queue-row-progress"] {
+    background: #ecedf0;
+    border: 1px solid #cbd0d8;
+    border-radius: 3px;
+    height: 12px;
+    padding: 0;
+}
+QProgressBar[role="queue-row-progress"][state="encoding"]::chunk
+    { background: #f58220; border-radius: 2px; }
+QProgressBar[role="queue-row-progress"][state="done"]::chunk
+    { background: #4caf50; border-radius: 2px; }
+QProgressBar[role="queue-row-progress"][state="failed"]::chunk
+    { background: #d63b3b; border-radius: 2px; }
+QProgressBar[role="queue-row-progress"][state="cancelled"]::chunk
+    { background: #9aa0aa; border-radius: 2px; }
+
+/* ---- tabs ---- */
+QTabWidget::pane {
+    border: 1px solid #d9dde3;
+    border-radius: 8px;
+    background: #ffffff;
+    top: -1px;
+}
+QTabBar::tab {
+    background: #ecedf0;
+    color: #5b6270;
+    padding: 7px 16px;
+    border: 1px solid #d9dde3;
+    border-bottom: none;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    margin-right: 2px;
+}
+QTabBar::tab:selected { background: #ffffff; color: #d66e10; font-weight: 700; }
+QTabBar::tab:hover    { color: #1f232b; }
+
+/* ---- tooltip ---- */
+QToolTip {
+    background: #ffffff;
+    color: #1f232b;
+    border: 1px solid #cbd0d8;
+    border-radius: 4px;
+    padding: 5px 7px;
+}
+
+/* ---- splitter ---- */
+QSplitter::handle             { background: #d9dde3; }
+QSplitter::handle:horizontal  { width: 4px; }
+QSplitter::handle:hover       { background: #f58220; }
+
+/* ---- preview frame ---- */
+QFrame#preview {
+    background: #1f232b;
+    border: 1px solid #cbd0d8;
+    border-radius: 8px;
+}
+
+/* ---- menus ---- */
+QMenu {
+    background: #ffffff;
+    color: #1f232b;
+    border: 1px solid #cbd0d8;
+    padding: 4px 0;
+}
+QMenu::item { padding: 5px 22px; }
+QMenu::item:selected { background: #f58220; color: #ffffff; }
+QMenu::separator { height: 1px; background: #ecedf0; margin: 4px 8px; }
+
+QMenuBar {
+    background: #ffffff;
+    color: #1f232b;
+    border-bottom: 1px solid #d9dde3;
+    padding: 2px;
+}
+QMenuBar::item {
+    background: transparent;
+    padding: 6px 14px;
+    border-radius: 4px;
+}
+QMenuBar::item:selected { background: #f58220; color: #ffffff; }
+QMenuBar::item:pressed  { background: #d66e10; color: #ffffff; }
+
+/* ---- text browser (README dialogs etc.) ---- */
+QTextBrowser {
+    background: #ffffff;
+    color: #1f232b;
+    border: 1px solid #d9dde3;
+    border-radius: 6px;
+    padding: 12px;
+    selection-background-color: #f58220;
+    selection-color: #ffffff;
+}
+QTextBrowser a { color: #d66e10; }
+
+/* ---- checkbox ---- */
+QCheckBox::indicator {
+    width: 16px;
+    height: 16px;
+    border: 1px solid #cbd0d8;
+    border-radius: 3px;
+    background: #ffffff;
+}
+QCheckBox::indicator:checked {
+    background: #f58220;
+    border-color: #f58220;
+}
+QCheckBox::indicator:hover { border-color: #f58220; }
+
+/* ---- scrollbars ---- */
+QScrollBar:vertical {
+    background: #f4f5f7;
+    width: 12px;
+    border-left: 1px solid #e0e3e8;
+}
+QScrollBar::handle:vertical {
+    background: #cbd0d8;
+    border-radius: 4px;
+    min-height: 24px;
+    margin: 2px;
+}
+QScrollBar::handle:vertical:hover { background: #a8aebb; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+QScrollBar:horizontal {
+    background: #f4f5f7;
+    height: 12px;
+    border-top: 1px solid #e0e3e8;
+}
+QScrollBar::handle:horizontal {
+    background: #cbd0d8;
+    border-radius: 4px;
+    min-width: 24px;
+    margin: 2px;
+}
+QScrollBar::handle:horizontal:hover { background: #a8aebb; }
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
+"""
+
+
+# ============================================================ system detect
+
+def detect_system_theme() -> str:
+    """Return ``"dark"`` or ``"light"`` based on the OS preference.
+
+    On Windows 10/11 this reads ``AppsUseLightTheme`` from
+    ``HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize``.
+    A value of ``0`` means dark mode, ``1`` means light.
+
+    On non-Windows platforms or any failure to read the registry, we
+    default to ``"dark"`` (matching the original Veloxa look).
+    """
+    if sys.platform != "win32":
+        return THEME_DARK
+    try:
+        import winreg  # type: ignore
+        sub = r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, sub) as key:
+            value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+            return THEME_LIGHT if int(value) == 1 else THEME_DARK
+    except (OSError, ValueError, ImportError) as exc:
+        log.info("System theme detect fell back to dark: %s", exc)
+        return THEME_DARK
+
+
+def resolve_theme_mode(mode: str) -> str:
+    """Collapse a user preference (``"system"``, ``"light"``, ``"dark"``)
+    into the concrete theme to apply (``"light"`` or ``"dark"``)."""
+    if mode == THEME_SYSTEM:
+        return detect_system_theme()
+    if mode in (THEME_LIGHT, THEME_DARK):
+        return mode
+    return THEME_DARK  # safe fallback for unknown values
+
+
+def apply_theme(app, mode: str):
+    """Apply the appropriate stylesheet to ``app`` based on ``mode``.
+
+    ``mode`` is one of ``"system"`` / ``"light"`` / ``"dark"``. After
+    resolution, the stylesheet matching the concrete theme is applied
+    via ``app.setStyleSheet(...)`` and re-polish is triggered so live
+    widgets pick up the new look without a restart.
+    """
+    concrete = resolve_theme_mode(mode)
+    qss = LIGHT_QSS if concrete == THEME_LIGHT else DARK_QSS
+    app.setStyleSheet(qss)
+    # Force every existing widget to recompute its style (important when
+    # the user flips themes at runtime — without this, some widgets keep
+    # their old palette until they're hidden/shown).
+    for w in app.allWidgets():
+        try:
+            w.style().unpolish(w)
+            w.style().polish(w)
+            w.update()
+        except Exception:
+            pass
+    log.info("Theme applied: mode=%r resolved=%r", mode, concrete)
+
+
+# ============================================================ formatters
 
 def fmt_time(seconds: float) -> str:
     if seconds is None or seconds < 0:
@@ -248,8 +658,15 @@ def fmt_eta(seconds: float) -> str:
     return f"{int(seconds // 3600)}h {int((seconds % 3600) // 60)}m"
 
 
+# ============================================================ runtime icon
+
 def make_runtime_icon() -> QIcon:
-    """Build the app icon programmatically (orange V on dark background)."""
+    """Build the app icon programmatically (orange V on dark background).
+
+    The icon is intentionally the same in both themes — the brand mark is
+    the orange "V" on a near-black square. A light-theme variant of the
+    icon would compete with the OS taskbar/start-menu treatment.
+    """
     icon = QIcon()
     for size in (16, 24, 32, 48, 64, 128, 256):
         pm = QPixmap(size, size)

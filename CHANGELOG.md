@@ -1,3 +1,29 @@
+# Veloxa Video Editor — V13.1.0
+
+**Minor release.** Design refresh + new System / Light / Dark theme switcher.
+
+## New: theme switcher
+
+A new **Appearance** submenu in the menu bar lets you pick:
+
+- **System (follow Windows)** — the default. Reads Windows' `AppsUseLightTheme` registry key and picks the matching theme. Switches automatically if you toggle Windows light/dark mode while the app is open (on next launch).
+- **Light** — bright, neutral warm-gray surfaces with the same orange accent. Designed for daytime / shared-screen editing where dark mode looks too dramatic.
+- **Dark** — refreshed version of the V13.x dark look: softer borders, accent-coloured focus rings on inputs, calmer button states, refined tab look.
+
+Your choice is persisted across sessions. The brand orange accent stays consistent in both modes so screenshots and on-screen indicators read the same.
+
+## Design refresh (applies to both themes)
+
+- Group boxes get bigger border radius (10px) and a wider title gutter for visual breathing room.
+- Inputs and buttons share a 6px radius — previously a mix of 5px and varied amounts.
+- Focus rings: every editable widget (`QLineEdit`, `QSpinBox`, `QDoubleSpinBox`, `QComboBox`) shows the brand orange when focused.
+- Refined scrollbars (12 px, rounded handles, hover state).
+- Refined `QToolTip` (compact 4 px radius, padded).
+- Refined `QMenu` with separator styling.
+- Better tab look — selected tab has a font-weight bump and an accent-coloured label.
+
+---
+
 # Veloxa Video Editor — V13.0.1
 
 **Hot-fix release.** Patches the V13.0 auto-update crash and the missed version strings in the title bar / tray tooltip / session log.
