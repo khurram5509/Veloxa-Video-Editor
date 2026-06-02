@@ -39,8 +39,8 @@ from engine import (
 from .updater import (
     APP_VERSION as VELOXA_APP_VERSION,
     GITHUB_REPO as VELOXA_GITHUB_REPO,
-    UpdateChecker, UpdateInfo,
-    download_installer, launch_installer_and_quit,
+    UpdateChecker, UpdateInfo, DownloadWorker,
+    launch_installer_and_quit,
 )
 # V13.1+: System / Light / Dark / OLED Dark theme switcher.
 from .theme import (
@@ -242,6 +242,7 @@ class MainWindow(QMainWindow):
         # API never blocks the window from showing.
         self._update_checker = None
         self._update_temp_path = None
+        self._update_dl_worker = None
         QTimer.singleShot(1500, self._maybe_check_for_updates_on_startup)
 
     # ============================================================== UI build
@@ -1832,9 +1833,14 @@ class MainWindow(QMainWindow):
         # "Remind Me Later" = no-op (we'll re-prompt next launch).
 
     def _run_update_install(self, info: UpdateInfo):
-        """Download the installer with a progress dialog, then quit and
-        launch the installer (which knows how to upgrade in-place via the
-        stable AppId)."""
+        """V14.0.1: download the installer on a background QThread so
+        the GUI stays responsive, then quit + launch the installer
+        (which upgrades in-place via the stable AppId).
+
+        Previous implementation ran the download synchronously on the
+        GUI thread and pumped ``QApplication.processEvents()`` after
+        every 64 KB chunk — that's both slow (6,300 event-loop spins
+        for a 395 MB installer) and freezes the rest of the UI."""
         # If a batch is encoding, warn — the installer will lose progress.
         if self.batch and self.batch.is_running():
             r = QMessageBox.question(
@@ -1849,9 +1855,9 @@ class MainWindow(QMainWindow):
             if r != QMessageBox.StandardButton.Yes:
                 return
 
-        # Progress dialog. Indeterminate until we get a Content-Length.
+        # Progress dialog. Tracks bytes / percent / transfer rate.
         prog = QProgressDialog(
-            "Downloading update...", "Cancel", 0, 100, self)
+            "Connecting...", "Cancel", 0, 1000, self)
         prog.setWindowTitle(f"Downloading V{info.version}")
         prog.setWindowModality(Qt.WindowModality.WindowModal)
         prog.setAutoClose(False)
@@ -1859,66 +1865,76 @@ class MainWindow(QMainWindow):
         prog.setMinimumDuration(0)
         prog.setValue(0)
         prog.show()
-        QApplication.processEvents()
 
-        def _on_progress(done: int, total: int):
+        worker = DownloadWorker(info, parent=self)
+        self._update_dl_worker = worker  # keep a ref so it isn't GC'd
+
+        def _on_progress(done: int, total: int, rate_bps: float):
+            mb_done = done / 1_048_576
+            rate_mbps = rate_bps / 1_048_576
             if total > 0:
-                pct = int(done * 100 / total)
-                prog.setMaximum(100)
-                prog.setValue(min(100, max(0, pct)))
-                mb_done = done / 1_048_576
+                # 0..1000 range gives ~0.1% granularity in the bar so
+                # users see movement even on the first MB.
+                pct_x10 = int(done * 1000 / total)
+                prog.setMaximum(1000)
+                prog.setValue(min(1000, max(0, pct_x10)))
                 mb_total = total / 1_048_576
                 prog.setLabelText(
-                    f"Downloading update... {mb_done:.1f} / {mb_total:.1f} MB")
+                    f"Downloading update... {mb_done:.1f} / "
+                    f"{mb_total:.1f} MB  ·  {rate_mbps:.1f} MB/s")
             else:
-                # No Content-Length — show indeterminate bar.
-                prog.setMaximum(0)
+                prog.setMaximum(0)  # indeterminate
                 prog.setLabelText(
-                    f"Downloading update... {done / 1_048_576:.1f} MB")
-            QApplication.processEvents()
+                    f"Downloading update... {mb_done:.1f} MB  ·  "
+                    f"{rate_mbps:.1f} MB/s")
 
-        def _on_cancel():
-            return prog.wasCanceled()
+        def _on_finished(path: str, ok: bool):
+            prog.close()
+            self._update_dl_worker = None
+            if not ok or not path:
+                if prog.wasCanceled():
+                    self.status_lbl.setText("Update cancelled.")
+                else:
+                    QMessageBox.warning(
+                        self, "Download failed",
+                        "<b>The installer could not be downloaded.</b>"
+                        "<br><br>"
+                        "Check your internet connection and try again. "
+                        "The release page is available at:<br>"
+                        f"<a href='{info.html_url}'>{info.html_url}</a>")
+                return
 
-        path = download_installer(
-            info, progress_cb=_on_progress, cancel_cb=_on_cancel)
-        prog.close()
-        if not path:
-            if prog.wasCanceled():
-                self.status_lbl.setText("Update cancelled.")
-            else:
+            self._update_temp_path = path
+            log.info("Update installer downloaded to %s", path)
+            # Confirm before quitting + launching the installer.
+            r = QMessageBox.question(
+                self, "Install update",
+                f"<b>V{info.version} is ready to install.</b><br><br>"
+                f"The app will close and the installer will launch. "
+                f"Your settings, profiles, and queue state will be "
+                f"preserved.",
+                QMessageBox.StandardButton.Ok
+                | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Ok)
+            if r != QMessageBox.StandardButton.Ok:
+                return
+            launched = launch_installer_and_quit(
+                path,
+                quit_callback=lambda: QApplication.instance().quit())
+            if not launched:
                 QMessageBox.warning(
-                    self, "Download failed",
-                    "<b>The installer could not be downloaded.</b><br><br>"
-                    "Check your internet connection and try again. The "
-                    "release page is available at:<br>"
-                    f"<a href='{info.html_url}'>{info.html_url}</a>")
-            return
+                    self, "Could not launch installer",
+                    "<b>The installer downloaded but could not be "
+                    "launched.</b><br><br>"
+                    f"You can run it manually:<br><code>{path}</code>")
 
-        self._update_temp_path = path
-        log.info("Update installer downloaded to %s", path)
-
-        # Confirm before quitting.
-        r = QMessageBox.question(
-            self, "Install update",
-            f"<b>V{info.version} is ready to install.</b><br><br>"
-            f"The app will close and the installer will launch. Your "
-            f"settings, profiles, and queue state will be preserved.",
-            QMessageBox.StandardButton.Ok
-            | QMessageBox.StandardButton.Cancel,
-            QMessageBox.StandardButton.Ok)
-        if r != QMessageBox.StandardButton.Ok:
-            return
-
-        ok = launch_installer_and_quit(
-            path,
-            quit_callback=lambda: QApplication.instance().quit())
-        if not ok:
-            QMessageBox.warning(
-                self, "Could not launch installer",
-                "<b>The installer downloaded but could not be "
-                "launched.</b><br><br>"
-                f"You can run it manually:<br><code>{path}</code>")
+        # Wire signals; cancel button on the QProgressDialog flips the
+        # worker's cancel flag (the worker polls it between chunks).
+        worker.progress.connect(_on_progress)
+        worker.finished_with_path.connect(_on_finished)
+        worker.finished.connect(worker.deleteLater)
+        prog.canceled.connect(worker.cancel)
+        worker.start()
 
     # ====================================================== watch folder dialog
 

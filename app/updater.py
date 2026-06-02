@@ -53,7 +53,7 @@ log = logging.getLogger("veloxa.updater")
 # Single source of truth for the application version. Imported by
 # ``app/docs.py``, ``app/main_window.py`` title bar, and the regression
 # tests. Bump this when cutting a new release.
-APP_VERSION = "14.0.0"
+APP_VERSION = "14.0.1"
 
 # GitHub repo to poll for releases. Format: ``owner/repo`` (no leading
 # slash, no trailing slash). Set to ``""`` to disable update checks
@@ -258,6 +258,13 @@ def download_installer(info: UpdateInfo,
     ``progress_cb(downloaded_bytes, total_bytes)`` is called periodically.
     ``cancel_cb() -> bool`` is polled between chunks; returning ``True``
     aborts and deletes the partial file.
+
+    V14.0.1: chunk size bumped to 1 MB (was 64 KB). Smaller chunks
+    were both slower (more Python iterations per MB) and forced the
+    GUI thread to repaint more often when the caller wired
+    ``progress_cb`` to ``QApplication.processEvents()``. With 1 MB
+    chunks the inner loop runs ~400 times for a 400 MB installer
+    instead of ~6400 times.
     """
     if not info or not info.asset_url:
         return None
@@ -268,6 +275,7 @@ def download_installer(info: UpdateInfo,
     tmp_fd, tmp_path = tempfile.mkstemp(
         prefix=f"veloxa_update_{os.getpid()}_",
         suffix=".exe")
+    chunk_size = 1 * 1024 * 1024  # 1 MB
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             total = info.asset_size or int(
@@ -277,7 +285,7 @@ def download_installer(info: UpdateInfo,
                 while True:
                     if cancel_cb and cancel_cb():
                         raise InterruptedError("User cancelled")
-                    chunk = resp.read(64 * 1024)
+                    chunk = resp.read(chunk_size)
                     if not chunk:
                         break
                     fout.write(chunk)
@@ -304,6 +312,66 @@ def download_installer(info: UpdateInfo,
         except OSError:
             pass
         return None
+
+
+# ---------------------------------------------------------------- worker
+
+class DownloadWorker(QThread):
+    """V14.0.1: runs :func:`download_installer` on a background thread
+    so the GUI stays responsive (no more 6,300 ``processEvents()`` calls
+    on the main thread blocking paint events).
+
+    Signals:
+      progress(done_bytes, total_bytes, rate_bps) — emitted at most
+        ``progress_throttle_hz`` times per second so the UI doesn't
+        repaint on every chunk.
+      finished_with_path(path_or_empty, success) — emitted exactly once
+        on thread exit. ``path`` is the temp file (or ``""`` on failure).
+    """
+
+    progress = pyqtSignal(int, int, float)
+    finished_with_path = pyqtSignal(str, bool)
+
+    progress_throttle_hz = 10  # max progress signals per second
+
+    def __init__(self, info: UpdateInfo, parent=None):
+        super().__init__(parent)
+        self._info = info
+        self._cancel = False
+        self._t_start = 0.0
+        self._last_emit_t = 0.0
+        self._last_emit_done = 0
+
+    def cancel(self):
+        self._cancel = True
+
+    def _on_progress(self, done: int, total: int):
+        import time as _t
+        now = _t.monotonic()
+        # Always emit the very first progress and after each min-interval.
+        min_interval = 1.0 / max(1, self.progress_throttle_hz)
+        if (now - self._last_emit_t) < min_interval and done < total:
+            return
+        elapsed = max(1e-6, now - self._t_start)
+        rate_bps = done / elapsed
+        self._last_emit_t = now
+        self._last_emit_done = done
+        self.progress.emit(done, total, rate_bps)
+
+    def _cancel_cb(self) -> bool:
+        return self._cancel
+
+    def run(self):
+        import time as _t
+        self._t_start = _t.monotonic()
+        self._last_emit_t = self._t_start
+        path = download_installer(
+            self._info,
+            progress_cb=self._on_progress,
+            cancel_cb=self._cancel_cb,
+        )
+        ok = bool(path)
+        self.finished_with_path.emit(path or "", ok)
 
 
 # ---------------------------------------------------------------- launch

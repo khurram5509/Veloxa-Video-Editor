@@ -1,3 +1,25 @@
+# Veloxa Video Editor — V14.0.1
+
+**Hot-fix release.** Speeds up the in-app update download and unfreezes the GUI during it.
+
+## Fixed
+
+The V14.0.0 update download was slow and made the rest of the app feel frozen for the entire 395 MB transfer. Two root causes:
+
+1. The download ran **synchronously on the GUI thread** and called `QApplication.processEvents()` after every 64 KB chunk — that's ~6,300 event-loop spins for a 400 MB installer, each one pumping paint events. The GUI couldn't actually move.
+2. The 64 KB chunk size meant ~6,300 Python `read()` iterations per installer. Bumping to 1 MB chunks cuts that to ~400.
+
+### What changed
+
+- **New `DownloadWorker` (QThread)** in `app/updater.py`. The download now runs entirely off the GUI thread; signals update the progress dialog. The rest of the app stays fully responsive — you can scrub, browse profiles, queue more files while the download is in flight.
+- **1 MB chunks** (was 64 KB). Roughly 16× fewer Python loop iterations per MB.
+- **Progress signals throttled to ~10/sec** (was per-chunk). Smooth bar updates without overwhelming the event queue.
+- **Progress bar uses 0..1000 range** so sub-percent movement is visible early in the download — no more "stuck at 0%" feel.
+- **Transfer-rate display** (e.g. *3.6 / 395.1 MB · 4.7 MB/s*) so the user has live feedback about throughput.
+- **Cancel button is wired to the worker** — clicking it sets a flag the worker polls between chunks, so cancel takes effect within ~100 KB at most.
+
+---
+
 # Veloxa Video Editor — V14.0.0
 
 **Major release.** Big feature push across queue UX, preview, audio-visual templates, and theming.

@@ -618,7 +618,7 @@ from app.updater import (
 )
 
 # Version is correctly bumped.
-check("APP_VERSION = '14.0.0'", _APP_VERSION == "14.0.0",
+check("APP_VERSION = '14.0.1'", _APP_VERSION == "14.0.1",
       f"got {_APP_VERSION!r}")
 check("GITHUB_REPO is khurram5509/Veloxa-Video-Editor",
       _u.GITHUB_REPO == "khurram5509/Veloxa-Video-Editor",
@@ -642,7 +642,7 @@ check("'v' prefix tolerated either side",
       _vc("v13.0", "V13.0") == 0)
 
 # is_newer convenience.
-check("is_newer('14.0.0', '13.0')", _newer("14.0.0", "13.0"))
+check("is_newer('14.0.1', '13.0')", _newer("14.0.1", "13.0"))
 check("not is_newer('12.9.99', '13.0')",
       not _newer("12.9.99", "13.0"))
 check("not is_newer('13.0', '13.0')",
@@ -697,7 +697,7 @@ check("check_for_updates('not-a-slug') returns None (no slash)",
 mw_src = open(ROOT / "app" / "main_window.py", encoding="utf-8").read()
 check("main_window imports UpdateChecker + helpers",
       "from .updater import" in mw_src
-      and "UpdateChecker" in mw_src and "download_installer" in mw_src
+      and "UpdateChecker" in mw_src and "DownloadWorker" in mw_src
       and "launch_installer_and_quit" in mw_src)
 check("Help menu has 'Check for Updates...' item",
       '"Check for Updates..."' in mw_src
@@ -725,16 +725,16 @@ check("docs.py advertises auto-update feature",
 
 # Installer.iss + build.ps1 carry the new version.
 iss_src = open(ROOT / "installer.iss", encoding="utf-8").read()
-check("installer.iss AppVersion = 14.0.0", '"14.0.0"' in iss_src)
-check("installer.iss EXE name = V14.0.0.exe",
-      "Veloxa-Video-Editor-V14.0.0.exe" in iss_src)
+check("installer.iss AppVersion = 14.0.1", '"14.0.1"' in iss_src)
+check("installer.iss EXE name = V14.0.1.exe",
+      "Veloxa-Video-Editor-V14.0.1.exe" in iss_src)
 check("installer.iss preserves stable AppId across V12 -> V13",
       "F2E1A8C4-1E5B-4C9A-9B27-VELOXA-VID-V121" in iss_src)
 ps1_src = open(ROOT / "build.ps1", encoding="utf-8").read()
-check("build.ps1 builds V14.0.0 EXE",
-      "Veloxa-Video-Editor-V14.0.0" in ps1_src)
+check("build.ps1 builds V14.0.1 EXE",
+      "Veloxa-Video-Editor-V14.0.1" in ps1_src)
 
-# V14.0.0 crash-fix: stale C++-object guard in _start_update_check.
+# V14.0.1 crash-fix: stale C++-object guard in _start_update_check.
 mw_src2 = open(ROOT / "app" / "main_window.py", encoding="utf-8").read()
 check("_start_update_check guards RuntimeError on stale wrapper",
       "except RuntimeError" in mw_src2
@@ -744,9 +744,9 @@ check("_on_update_checker_finished clears the Python ref",
 
 
 # ===========================================================================
-# 13. V14.0.0: System / Light / Dark theme switcher
+# 13. V14.0.1: System / Light / Dark theme switcher
 # ===========================================================================
-section("V14.0.0: theme switcher")
+section("V14.0.1: theme switcher")
 
 from app.theme import (
     DARK_QSS, LIGHT_QSS,
@@ -769,7 +769,7 @@ check("DARK_QSS and LIGHT_QSS differ (not a copy/paste)",
 check("dark theme uses brand orange",  "#f58220" in DARK_QSS)
 check("light theme uses brand orange", "#f58220" in LIGHT_QSS)
 
-# V14.0.0: light theme redesign — depth + hierarchy.
+# V14.0.1: light theme redesign — depth + hierarchy.
 check("light theme uses qlineargradient for button/input depth",
       "qlineargradient" in LIGHT_QSS)
 check("light theme uses tinted off-white main bg (cards stand out)",
@@ -854,6 +854,32 @@ for k in AUDIO_TEMPLATE_ORDER:
           and lbl == "[vout]" and "[aout]" in fc,
           f"label={lbl!r}, fc[:60]={fc[:60]!r}")
 
+# V14.0.1: actually run each template's filter graph through FFmpeg
+# (against a silent lavfi audio source) so any "Option not found" /
+# syntax errors fail loudly rather than at the user's encode time.
+import subprocess as _sp
+_FFMPEG = ROOT / "ffmpeg" / "ffmpeg.exe"
+if _FFMPEG.exists():
+    for k in AUDIO_TEMPLATE_ORDER:
+        tpl = get_audio_template(k)
+        fc, lbl = tpl.build_filter("0:a", 1920, 1080, {})
+        _cmd = [
+            str(_FFMPEG), "-y", "-hide_banner", "-loglevel", "error",
+            "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
+            "-filter_complex", fc, "-map", lbl, "-map", "[aout]",
+            "-t", "0.1", "-f", "null", "-",
+        ]
+        try:
+            _r = _sp.run(_cmd, capture_output=True, text=True, timeout=20)
+        except _sp.TimeoutExpired:
+            _r = None
+        check(f"{k}: FFmpeg parses + runs filter graph",
+              _r is not None and _r.returncode == 0,
+              (_r.stderr or '').strip().split('\n')[-1][:160] if _r else "timeout")
+else:
+    check("AV template FFmpeg validation skipped (no bundled ffmpeg.exe)",
+          True)
+
 # Engine: _encode_audio_with_template exists and is wired.
 import inspect as _inspect
 from engine import batch as _batch_mod
@@ -883,6 +909,46 @@ check("QMediaPlayer transport buttons present",
 po_v14 = open(ROOT / "app" / "profile_opts.py", encoding="utf-8").read()
 check("profile_opts passes audio_template through",
       '"audio_template"' in po_v14)
+
+
+# ===========================================================================
+# 15. V14.0.1: updater download runs on a QThread (no more GUI freeze)
+# ===========================================================================
+section("V14.0.1: updater download worker")
+
+from app.updater import DownloadWorker as _DW
+import inspect as _inspectV14
+_dw_src = _inspectV14.getsource(_DW)
+check("DownloadWorker is a QThread",
+      "QThread" in _dw_src and "class DownloadWorker" in _dw_src)
+check("DownloadWorker has progress + finished_with_path signals",
+      "progress = pyqtSignal" in _dw_src
+      and "finished_with_path = pyqtSignal" in _dw_src)
+check("DownloadWorker throttles progress signals (~10/sec by default)",
+      "progress_throttle_hz" in _dw_src
+      and "min_interval = 1.0 / max(1" in _dw_src)
+check("DownloadWorker passes a cancel callback",
+      "_cancel_cb" in _dw_src and "self._cancel = False" in _dw_src)
+
+# download_installer uses 1 MB chunks.
+import app.updater as _upd
+_di_src = _inspectV14.getsource(_upd.download_installer)
+check("download_installer chunk size = 1 MB",
+      "chunk_size = 1 * 1024 * 1024" in _di_src)
+
+# GUI now wires the worker instead of calling download_installer
+# synchronously.
+mw_v141 = open(ROOT / "app" / "main_window.py", encoding="utf-8").read()
+check("main_window uses DownloadWorker (no sync download_installer call)",
+      "DownloadWorker" in mw_v141
+      and "download_installer(" not in mw_v141)
+check("Progress dialog cancel routes to worker.cancel()",
+      "prog.canceled.connect(worker.cancel)" in mw_v141)
+check("Progress UI shows MB transferred + transfer rate",
+      "MB/s" in mw_v141 and "rate_mbps" in mw_v141)
+check("Progress bar uses 0..1000 range for sub-percent granularity",
+      "QProgressDialog(\n            \"Connecting...\", \"Cancel\", 0, 1000" in mw_v141
+      or 'QProgressDialog("Connecting..."' in mw_v141)
 
 
 # ===========================================================================

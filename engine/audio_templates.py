@@ -63,11 +63,12 @@ def _ffcolor(c: str) -> str:
 
 def _tpl_spectrum_bars(audio: str, w: int, h: int, opts: dict) -> tuple:
     """Tall, bright spectrum bars centred horizontally on a black
-    background. Looks like a podcast / radio app bar visualiser."""
-    color = _ffcolor(opts.get("audio_template_color") or "#f58220")
-    # showspectrum emits a scrolling spectrum. For a discrete-bar look
-    # we use the ``slide=replace`` mode + a small ``win_size``. The
-    # ``s=WxH`` is the spectrum's own canvas; we then pad it to target.
+    background. Looks like a podcast / radio app bar visualiser.
+
+    V14.0.1 fix: removed ``win_size=1024`` (not a valid showspectrum
+    option — FFmpeg rejected the filter with "Option not found"). The
+    default window is fine.
+    """
     sw = w
     sh = max(120, int(h * 0.55))  # use ~55% of the canvas for bars
     pad_top = (h - sh) // 2
@@ -75,7 +76,7 @@ def _tpl_spectrum_bars(audio: str, w: int, h: int, opts: dict) -> tuple:
     return (
         f"[{audio}]asplit=2[a1][a2];"
         f"[a1]showspectrum=s={sw}x{sh}:mode=combined:color=intensity:"
-        f"scale=lin:slide=replace:win_size=1024,"
+        f"scale=lin:slide=replace,"
         f"format=yuv420p[spec];"
         f"color=black:s={w}x{h}:r=30[bg];"
         f"[bg][spec]overlay=0:{pad_top},"
@@ -146,13 +147,17 @@ def _tpl_neon_ring(audio: str, w: int, h: int, opts: dict) -> tuple:
 def _tpl_podcast_layout(audio: str, w: int, h: int, opts: dict) -> tuple:
     """Multi-element podcast layout: top half is a static background,
     bottom strip shows scrolling spectrum, plus a thin centre divider.
-    The static background is a generated dark vignette."""
+    The static background is a generated dark vignette.
+
+    V14.0.1 fix: removed ``win_size=2048`` (not a valid showspectrum
+    option).
+    """
     bot_h = max(120, int(h * 0.30))
     top_h = h - bot_h
     return (
         f"[{audio}]asplit=2[a1][a2];"
         f"[a1]showspectrum=s={w}x{bot_h}:mode=combined:color=intensity:"
-        f"scale=log:slide=replace:win_size=2048,"
+        f"scale=log:slide=replace,"
         f"format=yuv420p[spec];"
         f"color=c=0x0b0d10:s={w}x{top_h}:r=30,"
         f"drawbox=x=0:y={top_h - 2}:w={w}:h=2:color=0xf58220@0.8:t=fill[top];"
@@ -166,12 +171,21 @@ def _tpl_podcast_layout(audio: str, w: int, h: int, opts: dict) -> tuple:
 
 def _tpl_spotify_canvas(audio: str, w: int, h: int, opts: dict) -> tuple:
     """Subtle background + a thin animated bar at the bottom. Vibe is
-    'spotify canvas loop' rather than an arcade visualiser."""
+    'spotify canvas loop' rather than an arcade visualiser.
+
+    V14.0.1 fix: the original used ``showvolume`` with a complex
+    ``c=ifnot(AVERAGE,if(gt(VOLUME,-2),...))`` expression. FFmpeg's
+    filter parser stops the ``c=`` value at the next ``:`` and the
+    ``:`` inside the if() expression was being read as a filter-option
+    separator (``No option name near '1920:h=108'``). Switched to
+    ``showwaves=mode=p2p`` for a similarly subtle moving-line look
+    with no expression-quoting hazard.
+    """
     bar_h = max(48, int(h * 0.10))
+    color = _ffcolor(opts.get("audio_template_color") or "#f58220")
     return (
         f"[{audio}]asplit=2[a1][a2];"
-        f"[a1]showvolume=f=1:b=4:c=ifnot(AVERAGE,if(gt(VOLUME,-2),"
-        f"0xff5050,0xf58220),0x707070):w={w}:h={bar_h},"
+        f"[a1]showwaves=s={w}x{bar_h}:mode=p2p:colors={color}:rate=30,"
         f"format=yuv420p[bars];"
         f"color=c=0x1a1d22:s={w}x{h}:r=30[bg];"
         f"[bg][bars]overlay=0:H-h,setsar=1[vout];"
