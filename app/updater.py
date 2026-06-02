@@ -1,0 +1,341 @@
+"""V13.0: GitHub-Releases-driven auto-update.
+
+Polls the GitHub Releases API for newer versions of this app and offers to
+download + run the installer in-place. Stays offline-friendly: any failure
+to reach the API is silent — no popups, no nag.
+
+Configure ``GITHUB_REPO`` below with your ``owner/repo`` slug; until that
+is set, all update checks short-circuit to "no update found" so a clean
+fresh build never tries to phone home.
+
+Architecture:
+
+* ``check_for_updates(...)`` is a pure function that calls the GitHub API
+  with ``urllib`` (stdlib) and returns an :class:`UpdateInfo` or ``None``.
+  Strict timeout, never raises (returns ``None`` on any failure).
+* ``UpdateChecker(QThread)`` wraps the call so the GUI never blocks.
+* ``download_installer(...)`` streams the asset to a temp file with
+  progress callbacks.
+* ``launch_installer_and_quit(...)`` spawns the installer and asks the
+  Qt app to quit so the installer can replace the EXE in-place. Relies
+  on the installer's stable ``AppId`` for upgrade-without-uninstall.
+
+Settings keys (in the GUI ``QSettings``):
+    ``auto_update_check`` (bool, default True)
+        Whether to poll on startup.
+    ``update_skip_version`` (str)
+        If equal to the latest version's tag, the GUI suppresses the
+        "update available" dialog. Cleared by the user clicking
+        "Check for Updates..." manually, or by a newer release than
+        the one skipped showing up.
+"""
+from __future__ import annotations
+
+import json
+import logging
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+from typing import Callable, Optional
+
+from PyQt6.QtCore import QThread, pyqtSignal
+
+log = logging.getLogger("veloxa.updater")
+
+
+# ---------------------------------------------------------------- config
+
+# Single source of truth for the application version. Imported by
+# ``app/docs.py``, ``app/main_window.py`` title bar, and the regression
+# tests. Bump this when cutting a new release.
+APP_VERSION = "13.0"
+
+# GitHub repo to poll for releases. Format: ``owner/repo`` (no leading
+# slash, no trailing slash). Set to ``""`` to disable update checks
+# entirely.
+GITHUB_REPO = "khurram5509/Veloxa-Video-Editor"
+
+# Per-request user-agent. GitHub's API rejects requests without one.
+USER_AGENT = f"VeloxaVideoEditor/{APP_VERSION}"
+
+# Hard ceiling on the HTTP request — auto-update should never block the
+# GUI for more than a few seconds, online or offline.
+HTTP_TIMEOUT_S = 8
+
+# Bound the asset download similarly — installer is ~400 MB today, allow
+# headroom for future growth. Failure surfaces to the user as a dialog,
+# not a frozen progress bar.
+DOWNLOAD_TIMEOUT_S = 600
+
+
+# ---------------------------------------------------------------- model
+
+@dataclass
+class UpdateInfo:
+    """Information about a newer release found on GitHub."""
+    version: str           # tag_name stripped of leading 'v', e.g. "13.0"
+    tag: str               # original tag_name as returned by GitHub
+    name: str              # release.name (display title)
+    body: str              # release notes (markdown, may be empty)
+    html_url: str          # release page on github.com
+    asset_url: str         # direct download URL for the Windows installer
+    asset_name: str        # asset's filename
+    asset_size: int        # size in bytes, 0 if unknown
+
+
+# ---------------------------------------------------------------- version utils
+
+_VERSION_PART = re.compile(r"\d+")
+
+
+def parse_version(s: str) -> tuple:
+    """Convert ``"V12.3.1"``, ``"v12.3"``, ``"13.0.0"`` etc. into a tuple
+    of ints for comparison. Non-numeric parts are dropped. An empty
+    string yields ``(0,)`` so ``parse_version("") < parse_version("0.0.1")``.
+    """
+    if not s:
+        return (0,)
+    parts = _VERSION_PART.findall(str(s))
+    if not parts:
+        return (0,)
+    return tuple(int(p) for p in parts)
+
+
+def version_compare(a: str, b: str) -> int:
+    """Return ``-1`` if ``a < b``, ``1`` if ``a > b``, ``0`` if equal.
+    Tolerant: ``v1.2`` == ``1.2`` == ``V1.2.0``.
+    """
+    pa = parse_version(a)
+    pb = parse_version(b)
+    # Pad to same length so trailing zeros compare equal.
+    n = max(len(pa), len(pb))
+    pa = pa + (0,) * (n - len(pa))
+    pb = pb + (0,) * (n - len(pb))
+    if pa < pb:
+        return -1
+    if pa > pb:
+        return 1
+    return 0
+
+
+def is_newer(remote: str, local: str = APP_VERSION) -> bool:
+    """Convenience wrapper. ``True`` iff ``remote > local``."""
+    return version_compare(remote, local) > 0
+
+
+# ---------------------------------------------------------------- API call
+
+def _pick_windows_asset(assets: list) -> Optional[dict]:
+    """Choose the Windows installer asset from a GitHub release's
+    ``assets`` array. Preference order: ``*Setup*.exe`` >
+    ``*Installer*.exe`` > any ``*.exe`` > ``None``. Case-insensitive.
+    """
+    if not assets:
+        return None
+    setup_assets = []
+    installer_assets = []
+    other_exe = []
+    for a in assets:
+        name = (a.get("name") or "").lower()
+        if not name.endswith(".exe"):
+            continue
+        if "setup" in name:
+            setup_assets.append(a)
+        elif "installer" in name:
+            installer_assets.append(a)
+        else:
+            other_exe.append(a)
+    for bucket in (setup_assets, installer_assets, other_exe):
+        if bucket:
+            return bucket[0]
+    return None
+
+
+def check_for_updates(github_repo: str = GITHUB_REPO,
+                      local_version: str = APP_VERSION,
+                      timeout: float = HTTP_TIMEOUT_S
+                      ) -> Optional[UpdateInfo]:
+    """Query GitHub for the latest release of ``github_repo``. Returns
+    an :class:`UpdateInfo` iff that release is strictly newer than
+    ``local_version``. Returns ``None`` for every error condition
+    (network unreachable, 404, rate-limit, malformed JSON, no Windows
+    asset, repo not configured...). Never raises.
+    """
+    if not github_repo or "/" not in github_repo:
+        return None
+    url = f"https://api.github.com/repos/{github_repo}/releases/latest"
+    req = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": USER_AGENT,
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read()
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError,
+            OSError) as exc:
+        log.info("Update check: API unreachable: %s", exc)
+        return None
+    try:
+        data = json.loads(raw.decode("utf-8", errors="replace"))
+    except (ValueError, UnicodeDecodeError) as exc:
+        log.warning("Update check: malformed JSON: %s", exc)
+        return None
+    if not isinstance(data, dict):
+        return None
+    tag = (data.get("tag_name") or "").strip()
+    if not tag:
+        return None
+    # Strip a leading 'v' / 'V' for display, but keep the raw tag for the
+    # asset URL.
+    display_version = tag.lstrip("vV")
+    if not is_newer(display_version, local_version):
+        return None
+    asset = _pick_windows_asset(data.get("assets") or [])
+    if not asset:
+        log.info("Update check: release %s has no .exe asset", tag)
+        return None
+    return UpdateInfo(
+        version=display_version,
+        tag=tag,
+        name=(data.get("name") or tag),
+        body=(data.get("body") or ""),
+        html_url=(data.get("html_url") or ""),
+        asset_url=(asset.get("browser_download_url") or ""),
+        asset_name=(asset.get("name") or "VeloxaVideoEditor-Setup.exe"),
+        asset_size=int(asset.get("size") or 0),
+    )
+
+
+# ---------------------------------------------------------------- Qt thread
+
+class UpdateChecker(QThread):
+    """Off-the-main-thread wrapper around :func:`check_for_updates`."""
+
+    # found_update(info, manual_trigger)
+    found_update = pyqtSignal(object, bool)
+    # no_update(manual_trigger) — emitted both on "you're up to date" AND
+    # on "API unreachable" so a manual click always gets feedback.
+    no_update = pyqtSignal(bool)
+
+    def __init__(self, *, github_repo: str = GITHUB_REPO,
+                 local_version: str = APP_VERSION,
+                 manual: bool = False,
+                 parent=None):
+        super().__init__(parent)
+        self._github_repo = github_repo
+        self._local_version = local_version
+        self._manual = manual
+
+    def run(self):
+        info = check_for_updates(
+            github_repo=self._github_repo,
+            local_version=self._local_version,
+        )
+        if info:
+            self.found_update.emit(info, self._manual)
+        else:
+            self.no_update.emit(self._manual)
+
+
+# ---------------------------------------------------------------- download
+
+def download_installer(info: UpdateInfo,
+                       progress_cb: Optional[Callable[[int, int], None]] = None,
+                       cancel_cb: Optional[Callable[[], bool]] = None,
+                       timeout: float = DOWNLOAD_TIMEOUT_S
+                       ) -> Optional[str]:
+    """Download ``info.asset_url`` to a temp file and return the path,
+    or ``None`` on error / cancel.
+
+    ``progress_cb(downloaded_bytes, total_bytes)`` is called periodically.
+    ``cancel_cb() -> bool`` is polled between chunks; returning ``True``
+    aborts and deletes the partial file.
+    """
+    if not info or not info.asset_url:
+        return None
+    req = urllib.request.Request(
+        info.asset_url,
+        headers={"User-Agent": USER_AGENT},
+    )
+    tmp_fd, tmp_path = tempfile.mkstemp(
+        prefix=f"veloxa_update_{os.getpid()}_",
+        suffix=".exe")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            total = info.asset_size or int(
+                resp.headers.get("Content-Length") or 0)
+            done = 0
+            with os.fdopen(tmp_fd, "wb") as fout:
+                while True:
+                    if cancel_cb and cancel_cb():
+                        raise InterruptedError("User cancelled")
+                    chunk = resp.read(64 * 1024)
+                    if not chunk:
+                        break
+                    fout.write(chunk)
+                    done += len(chunk)
+                    if progress_cb:
+                        try:
+                            progress_cb(done, total)
+                        except Exception:
+                            pass
+        # Sanity check: the file should be non-empty and (when GitHub
+        # told us the size) match the declared size.
+        actual = os.path.getsize(tmp_path)
+        if actual <= 0:
+            raise OSError("Downloaded zero bytes")
+        if info.asset_size and abs(actual - info.asset_size) > 1024:
+            log.warning("Update download size mismatch: got %d, expected %d",
+                        actual, info.asset_size)
+        return tmp_path
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError,
+            OSError, InterruptedError) as exc:
+        log.warning("Update download failed: %s", exc)
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        return None
+
+
+# ---------------------------------------------------------------- launch
+
+def launch_installer_and_quit(installer_path: str,
+                              quit_callback: Optional[Callable[[], None]] = None
+                              ) -> bool:
+    """Spawn the downloaded installer and call ``quit_callback`` (the
+    GUI quitter). The installer reuses our stable ``AppId`` to upgrade
+    in place. Returns ``True`` on successful spawn.
+    """
+    if not installer_path or not os.path.exists(installer_path):
+        return False
+    try:
+        # CREATE_NEW_PROCESS_GROUP + DETACHED_PROCESS so the installer
+        # survives this process exiting; close_fds so we don't pin our
+        # log handles into the child.
+        flags = 0
+        if sys.platform == "win32":
+            flags = (subprocess.CREATE_NEW_PROCESS_GROUP
+                     | getattr(subprocess, "DETACHED_PROCESS", 0))
+        subprocess.Popen(
+            [installer_path],
+            close_fds=True,
+            creationflags=flags,
+        )
+    except OSError as exc:
+        log.warning("Could not launch installer: %s", exc)
+        return False
+    if quit_callback:
+        try:
+            quit_callback()
+        except Exception:
+            pass
+    return True
