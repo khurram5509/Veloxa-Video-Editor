@@ -618,7 +618,7 @@ from app.updater import (
 )
 
 # Version is correctly bumped.
-check("APP_VERSION = '13.1.0'", _APP_VERSION == "13.1.0",
+check("APP_VERSION = '13.1.1'", _APP_VERSION == "13.1.1",
       f"got {_APP_VERSION!r}")
 check("GITHUB_REPO is khurram5509/Veloxa-Video-Editor",
       _u.GITHUB_REPO == "khurram5509/Veloxa-Video-Editor",
@@ -642,7 +642,7 @@ check("'v' prefix tolerated either side",
       _vc("v13.0", "V13.0") == 0)
 
 # is_newer convenience.
-check("is_newer('13.1.0', '13.0')", _newer("13.1.0", "13.0"))
+check("is_newer('13.1.1', '13.0')", _newer("13.1.1", "13.0"))
 check("not is_newer('12.9.99', '13.0')",
       not _newer("12.9.99", "13.0"))
 check("not is_newer('13.0', '13.0')",
@@ -725,16 +725,16 @@ check("docs.py advertises auto-update feature",
 
 # Installer.iss + build.ps1 carry the new version.
 iss_src = open(ROOT / "installer.iss", encoding="utf-8").read()
-check("installer.iss AppVersion = 13.1.0", '"13.1.0"' in iss_src)
-check("installer.iss EXE name = V13.1.0.exe",
-      "Veloxa-Video-Editor-V13.1.0.exe" in iss_src)
+check("installer.iss AppVersion = 13.1.1", '"13.1.1"' in iss_src)
+check("installer.iss EXE name = V13.1.1.exe",
+      "Veloxa-Video-Editor-V13.1.1.exe" in iss_src)
 check("installer.iss preserves stable AppId across V12 -> V13",
       "F2E1A8C4-1E5B-4C9A-9B27-VELOXA-VID-V121" in iss_src)
 ps1_src = open(ROOT / "build.ps1", encoding="utf-8").read()
-check("build.ps1 builds V13.1.0 EXE",
-      "Veloxa-Video-Editor-V13.1.0" in ps1_src)
+check("build.ps1 builds V13.1.1 EXE",
+      "Veloxa-Video-Editor-V13.1.1" in ps1_src)
 
-# V13.1.0 crash-fix: stale C++-object guard in _start_update_check.
+# V13.1.1 crash-fix: stale C++-object guard in _start_update_check.
 mw_src2 = open(ROOT / "app" / "main_window.py", encoding="utf-8").read()
 check("_start_update_check guards RuntimeError on stale wrapper",
       "except RuntimeError" in mw_src2
@@ -744,9 +744,9 @@ check("_on_update_checker_finished clears the Python ref",
 
 
 # ===========================================================================
-# 13. V13.1.0: System / Light / Dark theme switcher
+# 13. V13.1.1: System / Light / Dark theme switcher
 # ===========================================================================
-section("V13.1.0: theme switcher")
+section("V13.1.1: theme switcher")
 
 from app.theme import (
     DARK_QSS, LIGHT_QSS,
@@ -768,6 +768,18 @@ check("DARK_QSS and LIGHT_QSS differ (not a copy/paste)",
 # Brand accent appears in both themes.
 check("dark theme uses brand orange",  "#f58220" in DARK_QSS)
 check("light theme uses brand orange", "#f58220" in LIGHT_QSS)
+
+# V13.1.1: light theme redesign — depth + hierarchy.
+check("light theme uses qlineargradient for button/input depth",
+      "qlineargradient" in LIGHT_QSS)
+check("light theme uses tinted off-white main bg (cards stand out)",
+      "#eef0f4" in LIGHT_QSS)
+check("light theme: selected tab gets orange underline",
+      "border-bottom: 2px solid #f58220" in LIGHT_QSS)
+check("light theme: focus ring is 2px (not just 1px)",
+      "border: 2px solid #f58220" in LIGHT_QSS)
+check("light theme: alternating list-row colour for scanability",
+      "alternate-background-color" in LIGHT_QSS)
 
 # System detector returns a valid concrete mode.
 sys_mode = _dst()

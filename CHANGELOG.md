@@ -1,3 +1,25 @@
+# Veloxa Video Editor — V13.1.1
+
+**Patch release.** Real visual depth for the light theme.
+
+## Fixed
+
+The V13.1.0 light theme was too flat — all panels were the same plain white with thin gray borders, so the queue, preview, tabs, and bottom bar blurred into one big surface. This release re-does the light theme with proper visual hierarchy:
+
+- **Tinted off-white main background** (`#eef0f4`) so the white "cards" (group boxes, lists, tab pane, text browsers) visibly pop.
+- **Subtle vertical gradients** on buttons and inputs give a "raised" feel without leaving the flat-modern aesthetic.
+- **Bigger card radius** (12 px on group boxes, 10 px on tab pane) for a more refined look.
+- **Selected tab** now gets a 2 px brand-orange underline (replacing the previous flat highlight).
+- **Focus rings** are 2 px (was 1 px) so the active input is unambiguous.
+- **Alternating row colours** in queue list for easier scanning.
+- **Polished primary button** (orange gradient + 1 px shadow line) and matching danger button.
+- **Dark-on-light tooltip** (was white-on-white-with-border) for better legibility.
+- **Refined slider handle** (16 px, 2 px orange ring) and **fatter progress bar** (20 px) with gradient chunk.
+
+Dark theme is unchanged.
+
+---
+
 # Veloxa Video Editor — V13.1.0
 
 **Minor release.** Design refresh + new System / Light / Dark theme switcher.

@@ -22,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='Veloxa-Video-Editor-V13.1.0',
+    name='Veloxa-Video-Editor-V13.1.1',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
