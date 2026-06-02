@@ -130,6 +130,9 @@ def profile_to_opts(profile: dict, available_encoders: list) -> dict:
         # V11.3: profile audio visuals + round-robin rotation.
         "profile_visuals_enabled": bool(p.get("profile_visuals_enabled", False)),
         "profile_visuals":  list(p.get("profile_visuals") or []),
+        # V14.0: real-time audio-visual template (key, "none" = use the
+        # image / video visual pipeline instead).
+        "audio_template":   p.get("audio_template") or "none",
         # V12.3.1: profile carries a quality-tier *label* (Low / Medium
         # / High / Best / Super Best). Resolve to kbps here so the
         # engine sees the same int it expected before. Back-compat: if

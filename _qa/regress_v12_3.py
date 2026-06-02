@@ -618,7 +618,7 @@ from app.updater import (
 )
 
 # Version is correctly bumped.
-check("APP_VERSION = '13.1.1'", _APP_VERSION == "13.1.1",
+check("APP_VERSION = '14.0.0'", _APP_VERSION == "14.0.0",
       f"got {_APP_VERSION!r}")
 check("GITHUB_REPO is khurram5509/Veloxa-Video-Editor",
       _u.GITHUB_REPO == "khurram5509/Veloxa-Video-Editor",
@@ -642,7 +642,7 @@ check("'v' prefix tolerated either side",
       _vc("v13.0", "V13.0") == 0)
 
 # is_newer convenience.
-check("is_newer('13.1.1', '13.0')", _newer("13.1.1", "13.0"))
+check("is_newer('14.0.0', '13.0')", _newer("14.0.0", "13.0"))
 check("not is_newer('12.9.99', '13.0')",
       not _newer("12.9.99", "13.0"))
 check("not is_newer('13.0', '13.0')",
@@ -725,16 +725,16 @@ check("docs.py advertises auto-update feature",
 
 # Installer.iss + build.ps1 carry the new version.
 iss_src = open(ROOT / "installer.iss", encoding="utf-8").read()
-check("installer.iss AppVersion = 13.1.1", '"13.1.1"' in iss_src)
-check("installer.iss EXE name = V13.1.1.exe",
-      "Veloxa-Video-Editor-V13.1.1.exe" in iss_src)
+check("installer.iss AppVersion = 14.0.0", '"14.0.0"' in iss_src)
+check("installer.iss EXE name = V14.0.0.exe",
+      "Veloxa-Video-Editor-V14.0.0.exe" in iss_src)
 check("installer.iss preserves stable AppId across V12 -> V13",
       "F2E1A8C4-1E5B-4C9A-9B27-VELOXA-VID-V121" in iss_src)
 ps1_src = open(ROOT / "build.ps1", encoding="utf-8").read()
-check("build.ps1 builds V13.1.1 EXE",
-      "Veloxa-Video-Editor-V13.1.1" in ps1_src)
+check("build.ps1 builds V14.0.0 EXE",
+      "Veloxa-Video-Editor-V14.0.0" in ps1_src)
 
-# V13.1.1 crash-fix: stale C++-object guard in _start_update_check.
+# V14.0.0 crash-fix: stale C++-object guard in _start_update_check.
 mw_src2 = open(ROOT / "app" / "main_window.py", encoding="utf-8").read()
 check("_start_update_check guards RuntimeError on stale wrapper",
       "except RuntimeError" in mw_src2
@@ -744,9 +744,9 @@ check("_on_update_checker_finished clears the Python ref",
 
 
 # ===========================================================================
-# 13. V13.1.1: System / Light / Dark theme switcher
+# 13. V14.0.0: System / Light / Dark theme switcher
 # ===========================================================================
-section("V13.1.1: theme switcher")
+section("V14.0.0: theme switcher")
 
 from app.theme import (
     DARK_QSS, LIGHT_QSS,
@@ -756,8 +756,8 @@ from app.theme import (
     apply_theme as _apt,
 )
 
-check("THEME_MODES includes system / light / dark",
-      set(_TMODES) == {"system", "light", "dark"},
+check("THEME_MODES includes system / light / dark / oled",
+      set(_TMODES) == {"system", "light", "dark", "oled"},
       str(_TMODES))
 check("DARK_QSS and LIGHT_QSS are non-trivial strings",
       isinstance(DARK_QSS, str) and isinstance(LIGHT_QSS, str)
@@ -769,7 +769,7 @@ check("DARK_QSS and LIGHT_QSS differ (not a copy/paste)",
 check("dark theme uses brand orange",  "#f58220" in DARK_QSS)
 check("light theme uses brand orange", "#f58220" in LIGHT_QSS)
 
-# V13.1.1: light theme redesign — depth + hierarchy.
+# V14.0.0: light theme redesign — depth + hierarchy.
 check("light theme uses qlineargradient for button/input depth",
       "qlineargradient" in LIGHT_QSS)
 check("light theme uses tinted off-white main bg (cards stand out)",
@@ -813,6 +813,76 @@ check("main.py uses apply_theme() instead of hardcoded DARK_QSS",
       "apply_theme(app" in main_src and "DARK_QSS" not in main_src)
 check("main.py reads theme_mode from QSettings",
       'theme_mode' in main_src)
+
+
+# ===========================================================================
+# 14. V14.0: AV templates + OLED theme + queue right-click + playback
+# ===========================================================================
+section("V14.0: AV templates / OLED / queue / playback")
+
+# OLED theme is registered as a fourth mode.
+from app.theme import THEME_OLED as _TOLED, THEME_MODES as _TM_V14
+check("OLED theme mode is registered", _TOLED == "oled")
+check("THEME_MODES includes oled", "oled" in _TM_V14)
+from app.theme import OLED_QSS as _OQ
+check("OLED_QSS uses pure-black main bg",
+      "#000000" in _OQ and "#23262d" not in _OQ)
+
+# Audio-visual templates registry.
+from engine import (
+    AUDIO_TEMPLATES, AUDIO_TEMPLATE_ORDER, AUDIO_TEMPLATE_NONE,
+    audio_template_choices, get_audio_template,
+)
+check("6 audio templates registered",
+      len(AUDIO_TEMPLATE_ORDER) == 6,
+      f"got {AUDIO_TEMPLATE_ORDER}")
+for k in ("spectrum_bars", "circular_spectrum", "waveform",
+          "neon_ring", "podcast_layout", "spotify_canvas"):
+    check(f"audio template {k!r} registered", k in AUDIO_TEMPLATES)
+choices_v14 = audio_template_choices()
+check("template_choices starts with 'none' sentinel",
+      choices_v14[0][0] == "none")
+check("get_audio_template('none') -> None",
+      get_audio_template("none") is None)
+
+# Filter graphs produce non-empty strings + a [vout] label.
+for k in AUDIO_TEMPLATE_ORDER:
+    tpl = get_audio_template(k)
+    fc, lbl = tpl.build_filter("0:a", 1920, 1080, {})
+    check(f"{k}: filter graph non-empty + has [vout]",
+          isinstance(fc, str) and len(fc) > 50
+          and lbl == "[vout]" and "[aout]" in fc,
+          f"label={lbl!r}, fc[:60]={fc[:60]!r}")
+
+# Engine: _encode_audio_with_template exists and is wired.
+import inspect as _inspect
+from engine import batch as _batch_mod
+src_atv = _inspect.getsource(_batch_mod.JobRunner._encode_audio_to_video)
+check("_encode_audio_to_video short-circuits on audio_template",
+      "_encode_audio_with_template" in src_atv
+      and 'opts.get("audio_template"' in src_atv)
+check("_encode_audio_with_template exists on JobRunner",
+      hasattr(_batch_mod.JobRunner, "_encode_audio_with_template"))
+
+# main_window has the dropdown + the new context-menu actions + overlay.
+mw_v14 = open(ROOT / "app" / "main_window.py", encoding="utf-8").read()
+check("audio_template_combo widget wired", "audio_template_combo" in mw_v14)
+check("Right-click: Preview This Row", '"▶ Preview This Row"' in mw_v14)
+check("Right-click: Move to Top / Bottom",
+      "Move " in mw_v14 and "to Top" in mw_v14 and "to Bottom" in mw_v14)
+check("Right-click: Duplicate Row(s)", "Duplicate" in mw_v14 and "Row(s)" in mw_v14)
+check("Right-click: Retry Failed/Done", "Retry" in mw_v14 and "Failed/Done" in mw_v14)
+check("Preview overlay widget present", "preview_overlay" in mw_v14)
+check("OLED theme listed in Appearance menu",
+      "OLED Dark (pure black)" in mw_v14)
+check("QMediaPlayer transport buttons present",
+      "_mp_player" in mw_v14 and "mp_play_btn" in mw_v14
+      and "mp_pause_btn" in mw_v14 and "mp_stop_btn" in mw_v14)
+
+# profile_opts pipes the template through to the CLI runner.
+po_v14 = open(ROOT / "app" / "profile_opts.py", encoding="utf-8").read()
+check("profile_opts passes audio_template through",
+      '"audio_template"' in po_v14)
 
 
 # ===========================================================================

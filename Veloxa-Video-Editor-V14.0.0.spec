@@ -1,12 +1,21 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_all
+
+datas = [('ffmpeg', 'ffmpeg'), ('app.ico', '.')]
+binaries = []
+hiddenimports = []
+tmp_ret = collect_all('PyQt6.QtMultimedia')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('PyQt6.QtMultimediaWidgets')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
 a = Analysis(
     ['main.py'],
     pathex=['.'],
-    binaries=[],
-    datas=[('ffmpeg', 'ffmpeg'), ('app.ico', '.')],
-    hiddenimports=[],
+    binaries=binaries,
+    datas=datas,
+    hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -22,7 +31,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='Veloxa-Video-Editor-V13.1.1',
+    name='Veloxa-Video-Editor-V14.0.0',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

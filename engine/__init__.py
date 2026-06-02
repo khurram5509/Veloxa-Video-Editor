@@ -46,6 +46,14 @@ from .encoders import (
 )
 from .filters import build_filter, build_audio_filter
 from .batch import JobRunner, BatchManager
+# V14.0: real-time audio-visual template registry.
+from .audio_templates import (
+    TEMPLATES as AUDIO_TEMPLATES,
+    TEMPLATE_ORDER as AUDIO_TEMPLATE_ORDER,
+    TEMPLATE_NONE as AUDIO_TEMPLATE_NONE,
+    template_choices as audio_template_choices,
+    get_template as get_audio_template,
+)
 
 __all__ = [
     # FFmpeg I/O
@@ -62,6 +70,9 @@ __all__ = [
     "VIDEO_QUALITY_BITRATE_KBPS", "AUDIO_QUALITY_BITRATE_KBPS",
     "resolve_video_bitrate_kbps", "resolve_audio_bitrate_kbps",
     "kbps_to_video_quality_tier", "kbps_to_audio_quality_tier",
+    # V14.0
+    "AUDIO_TEMPLATES", "AUDIO_TEMPLATE_ORDER", "AUDIO_TEMPLATE_NONE",
+    "audio_template_choices", "get_audio_template",
     # Filters
     "build_filter", "build_audio_filter",
     # Batch orchestration

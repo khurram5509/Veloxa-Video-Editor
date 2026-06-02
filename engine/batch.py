@@ -292,9 +292,102 @@ class JobRunner(QThread):
                  self.idx, src_w, src_h, target_w, target_h, tmp_path)
         return tmp_path, True, tmp_path
 
+    # ---- V14.0: audio + real-time audio-visual template -> video --
+
+    def _encode_audio_with_template(self, tpl):
+        """V14.0: encode an audio file into video using one of the
+        real-time FFmpeg-filter-based audio visualisations registered
+        in :mod:`engine.audio_templates`. The template's filter graph
+        produces the video stream directly from the audio — no
+        user-supplied visual is required.
+
+        The encode tail (encoder args, audio codec, intro/outro concat)
+        mirrors ``_encode_audio_to_video`` so all the existing profile
+        knobs (bitrate, fade, loudnorm, intro/outro, output dims) work
+        unchanged.
+        """
+        duration = probe_duration(self.ffprobe, self.src)
+        if duration <= 0:
+            return False, "Could not read audio duration"
+
+        clip_off = float(self.opts.get("clip_offset_s") or 0.0)
+        clip_dur = float(self.opts.get("clip_duration_s") or 0.0)
+        if clip_dur > 0:
+            start = max(0.0, clip_off)
+            seg = min(clip_dur, max(0.0, duration - start))
+        else:
+            start = max(0.0, float(self.opts.get("trim_start", 0)))
+            end_trim = max(0.0, float(self.opts.get("trim_end", 0)))
+            seg = duration - start - end_trim
+        if seg <= 0.05:
+            return False, f"Trim too aggressive ({duration:.1f}s audio)"
+
+        target_w = int(self.opts.get("out_w") or 1920)
+        target_h = int(self.opts.get("out_h") or 1080)
+        if target_w <= 0 or target_h <= 0:
+            target_w, target_h = 1920, 1080
+
+        cmd = [self.ffmpeg, "-y", "-hide_banner", "-loglevel", "error"]
+        cmd += ["-ss", f"{start:.3f}", "-t", f"{seg:.3f}", "-i", self.src]
+
+        # Build the template's filter graph from the audio input.
+        fc, vout_label = tpl.build_filter("0:a", target_w, target_h, self.opts)
+        cmd += ["-filter_complex", fc,
+                "-map", vout_label, "-map", "[aout]"]
+
+        encoder = self.opts.get("encoder", "libx264")
+        cmd += encoder_codec_args(
+            encoder,
+            self.opts.get("speed_tier", "Balanced"),
+            video_bitrate_kbps=self.opts.get("video_bitrate_kbps", 0))
+        speed = float(self.opts.get("speed", 1.0) or 1.0)
+        out_duration = seg / max(speed, 1e-3)
+        cmd += audio_codec_args(self.opts, output_duration_s=out_duration)
+        cmd += ["-r", "30", "-shortest"]
+
+        # Same intro/outro concat path as the other audio-to-video flow.
+        intro = (self.opts.get("intro_path") or "").strip()
+        outro = (self.opts.get("outro_path") or "").strip()
+        apply_intro = (intro and os.path.exists(intro)
+                       and self.opts.get("apply_intro", True))
+        apply_outro = (outro and os.path.exists(outro)
+                       and self.opts.get("apply_outro", True))
+        if apply_intro or apply_outro:
+            main_tmp = self.dst + ".main.mp4"
+            cmd += ["-movflags", "+faststart",
+                    "-progress", "pipe:1", "-nostats", main_tmp]
+            ok, msg = self._run_ffmpeg(cmd, seg,
+                                        cancel_cleanup_target=main_tmp,
+                                        pct_offset=0.0, pct_scale=0.5)
+            if not ok:
+                try:
+                    if os.path.exists(main_tmp):
+                        os.remove(main_tmp)
+                except OSError:
+                    pass
+                return ok, msg
+            return self._concat_intro_outro(main_tmp, self.dst,
+                                            intro if apply_intro else "",
+                                            outro if apply_outro else "")
+        cmd += ["-movflags", "+faststart",
+                "-progress", "pipe:1", "-nostats", self.dst]
+        return self._run_ffmpeg(cmd, seg)
+
     # ---- audio + image/video visual -> video ------------------
 
     def _encode_audio_to_video(self):
+        # V14.0: real-time audio template short-circuit. When a template
+        # like "spectrum_bars" or "neon_ring" is selected the visual is
+        # synthesised from the audio itself, so no user-supplied visual
+        # is required. Templates are looked up here and, when present,
+        # ``_encode_audio_with_template`` runs an alternative pipeline.
+        template_key = (self.opts.get("audio_template") or "").strip()
+        if template_key and template_key != "none":
+            from .audio_templates import get_template
+            tpl = get_template(template_key)
+            if tpl is not None:
+                return self._encode_audio_with_template(tpl)
+
         if not self.visual_path or not os.path.exists(self.visual_path):
             return False, "No visual set for audio file"
 

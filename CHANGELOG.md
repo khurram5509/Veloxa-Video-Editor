@@ -1,3 +1,49 @@
+# Veloxa Video Editor — V14.0.0
+
+**Major release.** Big feature push across queue UX, preview, audio-visual templates, and theming.
+
+## Queue right-click menu
+
+- **▶ Preview This Row** — jump the preview pane to the clicked row.
+- **⬆ Move N to Top** / **⬇ Move N to Bottom** — bulk reorder.
+- **➕ Duplicate N Row(s)** — clone selected rows in place (same source, visual, profile).
+- **↻ Retry N Failed/Done Row(s)** — reset rows to pending so the next Start re-runs them.
+- The existing actions (Open source / Open output / Apply Profile / Change Visual / Remove / Delete from Disk) all stay.
+
+## Preview
+
+- **Source / Duration / Resolution / Codec / Profile** overlay in the top-left of the preview frame, semi-transparent dark backdrop, updates live with the selection.
+- **Real video playback** via QtMultimedia — Play / Pause / Stop transport, volume slider, position read-out. The video widget overlays the preview frame when you press ▶; the static thumbnail comes back on Stop. Requires the bundled Qt6Multimedia DLLs (auto-bundled by PyInstaller).
+
+## Audio-visual templates (real-time, no visual file needed)
+
+A new dropdown in the **Audio Visuals** tab lets you pick a real-time visualisation that's synthesised frame-by-frame from the audio at encode time — no PNG / MP4 visual required:
+
+- **Spectrum Bars** — classic frequency-spectrum bars on a dark background.
+- **Circular Spectrum** — Spotify-canvas-style polar bars.
+- **Waveform** — calm horizontal waveform on a tinted background.
+- **Neon Audio Ring** — glowing audio ring (CQT + bloom).
+- **Podcast Layout** — static dark hero on top, scrolling spectrum strip on bottom.
+- **Spotify Canvas Style** — subtle dark background with a thin volume bar at the foot.
+
+Set **— None —** (the default) to use the existing image / video visual pipeline.
+
+## Themes
+
+- **OLED Dark** — pure-`#000000` variant of the dark theme, picked from the same **Appearance** menu as System / Light / Dark. Designed for OLED panels where dark mode burns less power.
+
+## Engine
+
+- New `engine/audio_templates.py` module with the template registry. Each template renders a complete FFmpeg `filter_complex` from a single `[0:a]` input. Templates use `showspectrum`, `showcqt`, `showwaves`, `showvolume`, and `boxblur` — all bundled in the included FFmpeg essentials build.
+- `JobRunner._encode_audio_with_template` is a parallel pipeline that runs alongside the existing `_encode_audio_to_video`. The intro/outro concat, bitrate / fade / loudnorm options, and output dimensions all work unchanged.
+
+## Notes
+
+- Visual-timeline zoom + frame-precision trimming was scoped out of V14.0 (the existing draggable seek-bar handles already provide visual trimming). Scheduled for V14.1.
+- License dashboard + usage analytics intentionally not included — Veloxa stays free / open-source.
+
+---
+
 # Veloxa Video Editor — V13.1.1
 
 **Patch release.** Real visual depth for the light theme.

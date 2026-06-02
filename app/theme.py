@@ -40,7 +40,8 @@ BRAND_HANDLE = "#fbbf24"
 THEME_SYSTEM = "system"
 THEME_DARK = "dark"
 THEME_LIGHT = "light"
-THEME_MODES = (THEME_SYSTEM, THEME_DARK, THEME_LIGHT)
+THEME_OLED = "oled"  # V14.0: pure-black variant for OLED panels
+THEME_MODES = (THEME_SYSTEM, THEME_DARK, THEME_LIGHT, THEME_OLED)
 
 
 # ============================================================ DARK QSS
@@ -675,6 +676,44 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
 """
 
 
+# ============================================================ OLED QSS
+#
+# V14.0: pure-black variant for OLED panels. Same brand accent, same
+# layout dimensions as DARK_QSS, but background is true #000000 so
+# individual pixels are physically off on an OLED. Surfaces step up
+# to subtle dark grays for hierarchy.
+
+OLED_QSS = DARK_QSS.replace(
+    "#23262d", "#000000"  # main window bg
+).replace(
+    "#2d313a", "#0e0f12"  # group box / pane surface (was warmer)
+).replace(
+    "#1a1d22", "#050608"  # menubar / list / progress bg
+).replace(
+    "#1d2026", "#050608"  # input / combo bg
+).replace(
+    "#0c0e12", "#000000"  # preview frame
+).replace(
+    "#15171c", "#000000"  # tooltip bg
+).replace(
+    "#161920", "#050608"  # queue-row progress bg
+).replace(
+    "#3a3f4a", "#1a1c20"  # button bg
+).replace(
+    "#454b59", "#222428"  # button hover
+).replace(
+    "#2f343e", "#101216"  # button pressed
+).replace(
+    "#2a2d34", "#0a0b0e"  # button disabled
+).replace(
+    "#3d424e", "#1f2227"  # border
+).replace(
+    "#4b505c", "#26292f"  # input border
+).replace(
+    "#262a31", "#0e1014"  # list item hover
+)
+
+
 # ============================================================ system detect
 
 def detect_system_theme() -> str:
@@ -701,25 +740,33 @@ def detect_system_theme() -> str:
 
 
 def resolve_theme_mode(mode: str) -> str:
-    """Collapse a user preference (``"system"``, ``"light"``, ``"dark"``)
-    into the concrete theme to apply (``"light"`` or ``"dark"``)."""
+    """Collapse a user preference into the concrete theme to apply
+    (``"light"`` / ``"dark"`` / ``"oled"``). ``"system"`` resolves to
+    either ``"light"`` or ``"dark"`` based on Windows' preference."""
     if mode == THEME_SYSTEM:
         return detect_system_theme()
-    if mode in (THEME_LIGHT, THEME_DARK):
+    if mode in (THEME_LIGHT, THEME_DARK, THEME_OLED):
         return mode
     return THEME_DARK  # safe fallback for unknown values
+
+
+_QSS_FOR_MODE = {
+    THEME_LIGHT: lambda: LIGHT_QSS,
+    THEME_DARK:  lambda: DARK_QSS,
+    THEME_OLED:  lambda: OLED_QSS,
+}
 
 
 def apply_theme(app, mode: str):
     """Apply the appropriate stylesheet to ``app`` based on ``mode``.
 
-    ``mode`` is one of ``"system"`` / ``"light"`` / ``"dark"``. After
-    resolution, the stylesheet matching the concrete theme is applied
-    via ``app.setStyleSheet(...)`` and re-polish is triggered so live
-    widgets pick up the new look without a restart.
+    ``mode`` is one of ``"system"`` / ``"light"`` / ``"dark"`` / ``"oled"``.
+    After resolution, the stylesheet matching the concrete theme is
+    applied via ``app.setStyleSheet(...)`` and re-polish is triggered
+    so live widgets pick up the new look without a restart.
     """
     concrete = resolve_theme_mode(mode)
-    qss = LIGHT_QSS if concrete == THEME_LIGHT else DARK_QSS
+    qss = _QSS_FOR_MODE.get(concrete, lambda: DARK_QSS)()
     app.setStyleSheet(qss)
     # Force every existing widget to recompute its style (important when
     # the user flips themes at runtime — without this, some widgets keep

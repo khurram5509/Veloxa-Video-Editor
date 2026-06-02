@@ -42,10 +42,10 @@ from .updater import (
     UpdateChecker, UpdateInfo,
     download_installer, launch_installer_and_quit,
 )
-# V13.1: System / Light / Dark theme switcher.
+# V13.1+: System / Light / Dark / OLED Dark theme switcher.
 from .theme import (
     apply_theme, resolve_theme_mode,
-    THEME_SYSTEM, THEME_LIGHT, THEME_DARK, THEME_MODES,
+    THEME_SYSTEM, THEME_LIGHT, THEME_DARK, THEME_OLED, THEME_MODES,
 )
 
 
@@ -428,7 +428,98 @@ class MainWindow(QMainWindow):
         self.preview_label.setStyleSheet(
             "color: #8a8e96; background: transparent;")
         pf.addWidget(self.preview_label)
+
+        # V14.0: source-metadata overlay floats in the top-left corner of
+        # the preview frame. Shows live Source / Duration / Resolution /
+        # Codec / Profile for the currently-selected row. Kept transparent
+        # background-with-shadow-text so it reads against dark video.
+        self.preview_overlay = QLabel(self.preview_frame)
+        self.preview_overlay.setStyleSheet(
+            "QLabel { "
+            "  background: rgba(0, 0, 0, 160); "
+            "  color: #f0f0f0; "
+            "  padding: 6px 10px; "
+            "  border-radius: 6px; "
+            "  font-size: 9pt; "
+            "}"
+        )
+        self.preview_overlay.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.preview_overlay.setText("")
+        self.preview_overlay.hide()
+        self.preview_overlay.move(10, 10)
         v.addWidget(self.preview_frame, 1)
+
+        # V14.0: real video playback via QtMultimedia. The QVideoWidget
+        # is parented to the preview frame and starts hidden — clicking
+        # ▶ Play swaps the static thumbnail for the live player. Stop
+        # restores the thumbnail.
+        try:
+            from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
+            from PyQt6.QtMultimediaWidgets import QVideoWidget
+            self._mp_video_widget = QVideoWidget(self.preview_frame)
+            self._mp_video_widget.setStyleSheet(
+                "background: #000000; border-radius: 6px;")
+            self._mp_video_widget.hide()
+            self._mp_player = QMediaPlayer(self)
+            self._mp_audio_out = QAudioOutput(self)
+            self._mp_player.setAudioOutput(self._mp_audio_out)
+            self._mp_player.setVideoOutput(self._mp_video_widget)
+            self._mp_player.positionChanged.connect(self._mp_on_position)
+            self._mp_player.durationChanged.connect(self._mp_on_duration)
+            self._mp_player.playbackStateChanged.connect(
+                self._mp_on_playback_state)
+            self._mp_loaded_src = ""
+            self._mp_available = True
+        except ImportError as exc:
+            log.info("QtMultimedia unavailable: %s", exc)
+            self._mp_player = None
+            self._mp_video_widget = None
+            self._mp_available = False
+
+        # Transport row (always created; buttons disabled if multimedia
+        # didn't import).
+        transport = QHBoxLayout()
+        transport.setContentsMargins(0, 4, 0, 0)
+        transport.setSpacing(6)
+        self.mp_play_btn = QPushButton("▶")
+        self.mp_play_btn.setToolTip("Play")
+        self.mp_play_btn.setFixedWidth(32)
+        self.mp_pause_btn = QPushButton("⏸")
+        self.mp_pause_btn.setToolTip("Pause")
+        self.mp_pause_btn.setFixedWidth(32)
+        self.mp_stop_btn = QPushButton("■")
+        self.mp_stop_btn.setToolTip("Stop")
+        self.mp_stop_btn.setFixedWidth(32)
+        self.mp_pos_lbl = QLabel("00:00 / 00:00")
+        self.mp_pos_lbl.setProperty("role", "muted")
+        self.mp_pos_lbl.setMinimumWidth(110)
+        self.mp_pos_lbl.setAlignment(
+            Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
+        vol_lbl = QLabel("🔊")
+        vol_lbl.setProperty("role", "muted")
+        self.mp_volume = QSlider(Qt.Orientation.Horizontal)
+        self.mp_volume.setRange(0, 100)
+        self.mp_volume.setValue(80)
+        self.mp_volume.setFixedWidth(90)
+        self.mp_volume.setToolTip("Playback volume")
+        self.mp_play_btn.clicked.connect(self._mp_play)
+        self.mp_pause_btn.clicked.connect(self._mp_pause)
+        self.mp_stop_btn.clicked.connect(self._mp_stop)
+        self.mp_volume.valueChanged.connect(self._mp_set_volume)
+        transport.addWidget(self.mp_play_btn)
+        transport.addWidget(self.mp_pause_btn)
+        transport.addWidget(self.mp_stop_btn)
+        transport.addWidget(self.mp_pos_lbl)
+        transport.addStretch()
+        transport.addWidget(vol_lbl)
+        transport.addWidget(self.mp_volume)
+        v.addLayout(transport)
+        if not self._mp_available:
+            for b in (self.mp_play_btn, self.mp_pause_btn, self.mp_stop_btn,
+                      self.mp_volume):
+                b.setEnabled(False)
+            self.mp_pos_lbl.setText("playback unavailable")
 
         self.seek_bar = TrimSeekBar()
         self.seek_bar.seek_changed.connect(self._on_seek_changed)
@@ -716,13 +807,39 @@ class MainWindow(QMainWindow):
         w = QWidget()
         outer = QVBoxLayout(w)
 
+        # V14.0: real-time audio-visual template dropdown. Picks from
+        # the registry of FFmpeg-filter-based visualisations (spectrum
+        # bars / circular / waveform / neon ring / podcast layout /
+        # spotify canvas). When set to anything other than "None", the
+        # encode skips the visual-file pipeline entirely and synthesises
+        # the picture frame-by-frame from the audio.
+        tpl_row = QHBoxLayout()
+        tpl_lbl = QLabel("Audio-visual template:")
+        tpl_lbl.setMinimumWidth(140)
+        self.audio_template_combo = QComboBox()
+        from engine import audio_template_choices
+        for key, name in audio_template_choices():
+            self.audio_template_combo.addItem(name, userData=key)
+        self.audio_template_combo.setCurrentIndex(0)
+        self.audio_template_combo.setToolTip(
+            "Real-time audio-reactive visual. When set, the visual is "
+            "generated frame-by-frame from the audio — no image or "
+            "video file required.\n\n"
+            "Templates use FFmpeg's showspectrum / showcqt / showwaves "
+            "filters and run at encode time.")
+        tpl_row.addWidget(tpl_lbl)
+        tpl_row.addWidget(self.audio_template_combo, 1)
+        outer.addLayout(tpl_row)
+
         self.profile_visuals_enabled = QCheckBox(
             "Use these visuals for audio inputs (round-robin)")
         self.profile_visuals_enabled.setToolTip(
             "When ticked, audio inputs in the queue get a visual assigned "
             "from this list in order, wrapping around when the list is "
             "shorter than the queue. The position in the rotation is "
-            "remembered per profile across sessions.")
+            "remembered per profile across sessions.\n\n"
+            "Ignored when an audio-visual template is selected above — "
+            "the template generates its own visuals.")
         # Toggling rotation re-renders the status line (counter, valid
         # count, warnings) so the user can see at a glance whether the
         # rotation will actually fire.
@@ -1441,6 +1558,7 @@ class MainWindow(QMainWindow):
             (THEME_SYSTEM, "System (follow Windows)"),
             (THEME_LIGHT,  "Light"),
             (THEME_DARK,   "Dark"),
+            (THEME_OLED,   "OLED Dark (pure black)"),
         ]:
             act = QAction(label, self, checkable=True)
             act.setData(mode)
@@ -1449,6 +1567,91 @@ class MainWindow(QMainWindow):
                 lambda _checked=False, m=mode: self._set_theme_mode(m))
             self._theme_group.addAction(act)
             appearance.addAction(act)
+
+    # ====================================================== V14.0 playback
+
+    def _mp_current_src(self) -> str:
+        """V14.0: source file of the currently-selected queue row, or
+        ``""`` if nothing is selected."""
+        d, _ = self._current_video()
+        if not d or not d.src:
+            return ""
+        return d.src
+
+    def _mp_load_if_needed(self) -> bool:
+        if not self._mp_available:
+            return False
+        src = self._mp_current_src()
+        if not src or not os.path.exists(src):
+            return False
+        if src == self._mp_loaded_src:
+            return True
+        from PyQt6.QtCore import QUrl
+        self._mp_player.setSource(QUrl.fromLocalFile(src))
+        self._mp_loaded_src = src
+        # Resize the video widget to cover the preview frame each load.
+        self._mp_resize_video_widget()
+        return True
+
+    def _mp_resize_video_widget(self):
+        if not self._mp_video_widget:
+            return
+        margin = 4
+        w = self.preview_frame.width() - 2 * margin
+        h = self.preview_frame.height() - 2 * margin
+        self._mp_video_widget.setGeometry(margin, margin, max(0, w), max(0, h))
+
+    def _mp_play(self):
+        if not self._mp_load_if_needed():
+            self.status_lbl.setText(
+                "Select a queue row with a valid source file to play.")
+            return
+        # Show the video widget over the static thumbnail.
+        if self._mp_video_widget:
+            self._mp_resize_video_widget()
+            self._mp_video_widget.show()
+            self._mp_video_widget.raise_()
+            self.preview_overlay.raise_()
+        self._mp_player.play()
+
+    def _mp_pause(self):
+        if self._mp_player:
+            self._mp_player.pause()
+
+    def _mp_stop(self):
+        if self._mp_player:
+            self._mp_player.stop()
+        if self._mp_video_widget:
+            self._mp_video_widget.hide()
+
+    def _mp_set_volume(self, v: int):
+        if self._mp_audio_out:
+            self._mp_audio_out.setVolume(max(0.0, min(1.0, v / 100.0)))
+
+    def _mp_on_position(self, pos_ms: int):
+        dur = self._mp_player.duration() if self._mp_player else 0
+        if dur > 0:
+            self.mp_pos_lbl.setText(
+                f"{fmt_time(pos_ms / 1000.0)} / {fmt_time(dur / 1000.0)}")
+        else:
+            self.mp_pos_lbl.setText(fmt_time(pos_ms / 1000.0))
+
+    def _mp_on_duration(self, dur_ms: int):
+        if dur_ms > 0:
+            self.mp_pos_lbl.setText(
+                f"00:00.00 / {fmt_time(dur_ms / 1000.0)}")
+
+    def _mp_on_playback_state(self, state):
+        # When playback ends naturally (StoppedState after EOF), hide the
+        # video widget so the static thumbnail is visible again.
+        try:
+            from PyQt6.QtMultimedia import QMediaPlayer
+            if state == QMediaPlayer.PlaybackState.StoppedState:
+                if self._mp_video_widget and self._mp_player.position() >= max(
+                        0, self._mp_player.duration() - 200):
+                    self._mp_video_widget.hide()
+        except Exception:
+            pass
 
     # ====================================================== V13.1 theme
 
@@ -2438,8 +2641,27 @@ class MainWindow(QMainWindow):
         n_sel = len(selected_items)
 
         menu = QMenu(self)
+        # V14.0: jump preview to this row.
+        act_preview = menu.addAction("▶ Preview This Row")
+        if not d:
+            act_preview.setEnabled(False)
+        menu.addSeparator()
         act_open_src = menu.addAction("📂 Open Source Folder")
         act_open_dst = menu.addAction("📂 Open Output Folder")
+        menu.addSeparator()
+        # V14.0: row order shortcuts.
+        act_to_top = menu.addAction(f"⬆ Move {n_sel} to Top")
+        act_to_bot = menu.addAction(f"⬇ Move {n_sel} to Bottom")
+        if self._queue_locked:
+            act_to_top.setEnabled(False)
+            act_to_bot.setEnabled(False)
+        menu.addSeparator()
+        # V14.0: duplicate + retry.
+        act_duplicate = menu.addAction(f"➕ Duplicate {n_sel} Row(s)")
+        act_retry = menu.addAction(f"↻ Retry {n_sel} Failed/Done Row(s)")
+        if self._queue_locked:
+            act_duplicate.setEnabled(False)
+            act_retry.setEnabled(False)
         menu.addSeparator()
 
         # V11.5 (Feature 2c): Apply Profile submenu, populated from saved
@@ -2480,6 +2702,24 @@ class MainWindow(QMainWindow):
         chosen = menu.exec(self.file_list.mapToGlobal(pos))
         if chosen is None:
             return
+        if chosen == act_preview and d:
+            # Select the clicked row to make it the current one — the
+            # preview pane auto-syncs from the selection.
+            self.file_list.setCurrentItem(item)
+            self._refresh_preview()
+            return
+        if chosen == act_to_top:
+            self._move_items_to(selected_items, position="top")
+            return
+        if chosen == act_to_bot:
+            self._move_items_to(selected_items, position="bottom")
+            return
+        if chosen == act_duplicate:
+            self._duplicate_items(selected_items)
+            return
+        if chosen == act_retry:
+            self._retry_items(selected_items)
+            return
         if chosen == act_open_src and d:
             self._open_in_explorer(Path(d.src).parent)
         elif chosen == act_open_dst and d:
@@ -2504,6 +2744,89 @@ class MainWindow(QMainWindow):
         elif chosen in profile_actions:
             self._apply_profile_to_items(
                 selected_items, profile_actions[chosen])
+
+    # ===================== V14.0 queue row context helpers
+
+    def _move_items_to(self, items: list, *, position: str):
+        """V14.0: move the given items to either ``"top"`` or
+        ``"bottom"`` of the queue. Preserves the order *within* the
+        moved selection."""
+        if not items or self._queue_locked:
+            return
+        # Capture (data, widget) pairs in their current order so we can
+        # restore them after take.
+        captured = []
+        for it in items:
+            row = self.file_list.row(it)
+            captured.append((row, it))
+        captured.sort(key=lambda t: t[0])
+        # Take them all out (highest row first so indices stay valid).
+        taken = []
+        for row, it in sorted(captured, key=lambda t: -t[0]):
+            taken.insert(0, self.file_list.takeItem(row))
+        # Re-insert at the target end.
+        if position == "top":
+            for offset, it in enumerate(taken):
+                self.file_list.insertItem(offset, it)
+                self._install_row_widget(it)
+        else:
+            for it in taken:
+                self.file_list.addItem(it)
+                self._install_row_widget(it)
+        # Re-select to keep the user's selection intact.
+        self.file_list.clearSelection()
+        for it in taken:
+            it.setSelected(True)
+        self._save_queue_state()
+        self._refresh_queue_stats()
+
+    def _duplicate_items(self, items: list):
+        """V14.0: clone selected rows. Each clone is appended right
+        after the original with the same source, visual, and profile."""
+        if not items or self._queue_locked:
+            return
+        # Walk in reverse-row order so inserting at row+1 doesn't shift
+        # later targets.
+        targets = sorted(items, key=lambda it: -self.file_list.row(it))
+        for it in targets:
+            d = self._item_data(it)
+            if not d:
+                continue
+            new_d = QueueItemData(
+                src=d.src,
+                kind=d.kind,
+                visual_path=d.visual_path,
+                visual_kind=d.visual_kind,
+                visual_duration=d.visual_duration,
+                profile_name=d.profile_name,
+            )
+            insert_at = self.file_list.row(it) + 1
+            new_item = QListWidgetItem()
+            new_item.setData(Qt.ItemDataRole.UserRole, new_d)
+            self.file_list.insertItem(insert_at, new_item)
+            self._refresh_item_label(new_item)
+            self._install_row_widget(new_item)
+        self._save_queue_state()
+        self._refresh_queue_stats()
+
+    def _retry_items(self, items: list):
+        """V14.0: reset the given rows back to ``pending`` so they get
+        re-encoded on the next Start. Useful for failed / cancelled /
+        previously-done rows the user wants to re-run."""
+        if not items or self._queue_locked:
+            return
+        for it in items:
+            d = self._item_data(it)
+            if not d:
+                continue
+            d.status = "pending"
+            d.progress = 0.0
+            d.error = ""
+            d.eta = -1.0
+            it.setData(Qt.ItemDataRole.UserRole, d)
+            self._refresh_item_label(it)
+        self._save_queue_state()
+        self._refresh_queue_stats()
 
     def _delete_selected_from_disk(self, items: list):
         """V11.5 (Feature 1): permanently delete the source files of the
@@ -2841,6 +3164,29 @@ class MainWindow(QMainWindow):
                     f"{speed_str}{loud_str}{stereo_str}{profile_tag}")
         self.preview_info_lbl.setText(f"{src_part}   ->   {out_part}")
 
+        # V14.0: populate the in-preview overlay (top-left of the preview
+        # frame) with the per-source metadata block the user asked for.
+        # Hidden when there's no current row.
+        if d:
+            name = Path(d.src).name if d.src else "?"
+            dur_str = fmt_time(self.video_duration) if self.video_duration > 0 else "?"
+            res_str = (f"{self._src_w}x{self._src_h}"
+                       if self._src_w and self._src_h else "?")
+            prof = d.profile_name if d.profile_name else (self.profile_combo.currentText() or "—")
+            self.preview_overlay.setText(
+                f"<b>Source:</b> {name}<br>"
+                f"<b>Duration:</b> {dur_str}<br>"
+                f"<b>Resolution:</b> {res_str}<br>"
+                f"<b>Codec:</b> {codec}<br>"
+                f"<b>Profile:</b> {prof}"
+            )
+            self.preview_overlay.adjustSize()
+            self.preview_overlay.move(12, 12)
+            self.preview_overlay.show()
+            self.preview_overlay.raise_()
+        else:
+            self.preview_overlay.hide()
+
     def _schedule_preview(self, *_):
         self.preview_timer.start()
 
@@ -2895,6 +3241,8 @@ class MainWindow(QMainWindow):
             # videos used round-robin for audio inputs when enabled.
             "profile_visuals_enabled": self.profile_visuals_enabled.isChecked(),
             "profile_visuals": self._pv_to_list(),
+            # V14.0: audio-visual template (key, not display name).
+            "audio_template": self.audio_template_combo.currentData() or "none",
             # V12.3.1: video / audio quality is now a tier dropdown.
             # Resolve to the actual kbps the engine consumes; this also
             # depends on the chosen output resolution for video.
@@ -3191,6 +3539,8 @@ class MainWindow(QMainWindow):
             "split_max_minutes": float(self.split_max_minutes.value()),
             "profile_visuals_enabled": self.profile_visuals_enabled.isChecked(),
             "profile_visuals": self._pv_to_list(),
+            # V14.0: audio-visual template selection.
+            "audio_template": self.audio_template_combo.currentData() or "none",
             # V12.3.1: quality stored as the dropdown label. The numeric
             # kbps is derived at job-build time from (tier, resolution)
             # so a profile saved at 1080p that gets used to encode a 4K
@@ -3272,6 +3622,12 @@ class MainWindow(QMainWindow):
             self.profile_visuals_enabled.setChecked(
                 bool(d.get("profile_visuals_enabled", False)))
             self._pv_apply(d.get("profile_visuals") or [])
+            # V14.0: restore audio-visual template selection.
+            template_key = d.get("audio_template") or "none"
+            idx = self.audio_template_combo.findData(template_key)
+            if idx < 0:
+                idx = 0
+            self.audio_template_combo.setCurrentIndex(idx)
             # V12.3.1: quality tier (string label). Back-compat: profiles
             # saved under the V12.3 numeric-bitrate UI carry
             # ``video_bitrate_kbps`` / ``audio_bitrate_kbps`` ints — map
