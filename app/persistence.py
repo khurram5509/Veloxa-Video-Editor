@@ -110,7 +110,7 @@ def setup_logging() -> Path:
         console.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
         root.addHandler(console)
 
-    root.info("Veloxa Video Editor V12.3 session start; logging to %s", log_file)
+    root.info("Veloxa Video Editor V13.0 session start; logging to %s", log_file)
     return log_file
 
 

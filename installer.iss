@@ -1,16 +1,16 @@
-; Inno Setup script for Veloxa Video Editor V13.0
+; Inno Setup script for Veloxa Video Editor V13.0.1
 ; Builds a single Windows installer EXE that puts the app under
 ; Program Files, creates Start Menu + Desktop shortcuts, and registers
 ; an uninstaller. Run from the project root after building the app:
 ;
 ;   "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" installer.iss
 ;
-; The output lands in .\installer\Veloxa-Video-Editor-V13.0-Setup.exe.
+; The output lands in .\installer\Veloxa-Video-Editor-V13.0.1-Setup.exe.
 
 #define AppName        "Veloxa Video Editor"
-#define AppVersion     "13.0"
+#define AppVersion     "13.0.1"
 #define AppPublisher   "VeloxaLAB"
-#define AppExeName     "Veloxa-Video-Editor-V13.0.exe"
+#define AppExeName     "Veloxa-Video-Editor-V13.0.1.exe"
 ; AppId kept stable across V12.x AND V13.x so installer-driven upgrades
 ; replace the previous Veloxa install in place. Same GUID since V11.x —
 ; do NOT change unless you actually want a side-by-side install.

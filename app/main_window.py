@@ -139,7 +139,7 @@ class MainWindow(QMainWindow):
         self.app_icon = app_icon
         self.log_file_path = log_file_path
         self.setWindowIcon(app_icon)
-        self.setWindowTitle("Veloxa Video Editor V12.3")
+        self.setWindowTitle(f"Veloxa Video Editor V{VELOXA_APP_VERSION}")
         self.resize(1320, 960)
         self.setAcceptDrops(True)
 
@@ -258,7 +258,7 @@ class MainWindow(QMainWindow):
         h.setContentsMargins(2, 0, 2, 0)
         title = QLabel("Veloxa Video Editor")
         title.setProperty("role", "title")
-        version = QLabel("V12.3")
+        version = QLabel(f"V{VELOXA_APP_VERSION}")
         version.setProperty("role", "subtitle")
         h.addWidget(title)
         h.addWidget(version)
@@ -1343,7 +1343,7 @@ class MainWindow(QMainWindow):
         self.tray = None
         if QSystemTrayIcon.isSystemTrayAvailable():
             self.tray = QSystemTrayIcon(self.app_icon, self)
-            self.tray.setToolTip("Veloxa Video Editor V12.3")
+            self.tray.setToolTip(f"Veloxa Video Editor V{VELOXA_APP_VERSION}")
             self.tray.activated.connect(self._on_tray_activated)
             self.tray.show()
 
@@ -1456,11 +1456,25 @@ class MainWindow(QMainWindow):
         self._start_update_check(manual=True)
 
     def _start_update_check(self, *, manual: bool):
-        # Coalesce: if a check is already running, don't queue a second.
-        if self._update_checker is not None and self._update_checker.isRunning():
-            if manual:
-                self.status_lbl.setText("Update check already in progress...")
-            return
+        # V13.0.1 crash-fix: ``isRunning()`` on a wrapped-but-deleted
+        # C++ QThread is a hard crash with no Python traceback. The
+        # previous startup-check connected ``finished -> deleteLater``,
+        # which destroys the C++ object but leaves ``self._update_checker``
+        # pointing at the corpse. The next call (e.g. the user clicking
+        # the menu) hit this line and crashed. Test+drop the stale ref
+        # safely via the ``RuntimeError`` PyQt6 raises in that case.
+        if self._update_checker is not None:
+            try:
+                still_running = self._update_checker.isRunning()
+            except RuntimeError:
+                # C++ object already deleted — drop the stale ref.
+                still_running = False
+                self._update_checker = None
+            if still_running:
+                if manual:
+                    self.status_lbl.setText(
+                        "Update check already in progress...")
+                return
         if manual:
             self.status_lbl.setText("Checking for updates...")
         c = UpdateChecker(
@@ -1471,9 +1485,20 @@ class MainWindow(QMainWindow):
         )
         c.found_update.connect(self._on_update_found)
         c.no_update.connect(self._on_no_update)
+        # Order matters: clear the Python ref BEFORE asking Qt to delete
+        # the C++ object, so any future _start_update_check call sees
+        # ``self._update_checker is None`` and creates a fresh thread
+        # rather than touching a dangling pointer.
+        c.finished.connect(self._on_update_checker_finished)
         c.finished.connect(c.deleteLater)
         self._update_checker = c
         c.start()
+
+    def _on_update_checker_finished(self):
+        """V13.0.1: drop the Python reference to the QThread the moment
+        it finishes, so a subsequent ``_start_update_check`` can't see a
+        stale wrapper for a deleted C++ object."""
+        self._update_checker = None
 
     def _on_no_update(self, manual: bool):
         if not manual:
@@ -3914,7 +3939,7 @@ class MainWindow(QMainWindow):
         self.status_lbl.setText(msg)
         if self.tray:
             self.tray.showMessage(
-                "Veloxa Video Editor V12.3", msg,
+                f"Veloxa Video Editor V{VELOXA_APP_VERSION}", msg,
                 QSystemTrayIcon.MessageIcon.Information, 5000)
         log.info("Batch summary: %s", msg)
         self.batch = None
@@ -4211,5 +4236,5 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
             self._watcher = None
-        log.info("Veloxa Video Editor V12.3 session end")
+        log.info(f"Veloxa Video Editor V{VELOXA_APP_VERSION} session end")
         e.accept()

@@ -618,10 +618,10 @@ from app.updater import (
 )
 
 # Version is correctly bumped.
-check("APP_VERSION = '13.0'", _APP_VERSION == "13.0",
+check("APP_VERSION = '13.0.1'", _APP_VERSION == "13.0.1",
       f"got {_APP_VERSION!r}")
-check("Default GITHUB_REPO is empty (must be configured)",
-      _u.GITHUB_REPO == "",
+check("GITHUB_REPO is khurram5509/Veloxa-Video-Editor",
+      _u.GITHUB_REPO == "khurram5509/Veloxa-Video-Editor",
       f"got {_u.GITHUB_REPO!r}")
 
 # parse_version tolerates V/v prefix, trailing zeros, junk.
@@ -725,14 +725,22 @@ check("docs.py advertises auto-update feature",
 
 # Installer.iss + build.ps1 carry the new version.
 iss_src = open(ROOT / "installer.iss", encoding="utf-8").read()
-check("installer.iss AppVersion = 13.0", '"13.0"' in iss_src)
-check("installer.iss EXE name = V13.0.exe",
-      "Veloxa-Video-Editor-V13.0.exe" in iss_src)
+check("installer.iss AppVersion = 13.0.1", '"13.0.1"' in iss_src)
+check("installer.iss EXE name = V13.0.1.exe",
+      "Veloxa-Video-Editor-V13.0.1.exe" in iss_src)
 check("installer.iss preserves stable AppId across V12 -> V13",
       "F2E1A8C4-1E5B-4C9A-9B27-VELOXA-VID-V121" in iss_src)
 ps1_src = open(ROOT / "build.ps1", encoding="utf-8").read()
-check("build.ps1 builds V13.0 EXE",
-      "Veloxa-Video-Editor-V13.0" in ps1_src)
+check("build.ps1 builds V13.0.1 EXE",
+      "Veloxa-Video-Editor-V13.0.1" in ps1_src)
+
+# V13.0.1 crash-fix: stale C++-object guard in _start_update_check.
+mw_src2 = open(ROOT / "app" / "main_window.py", encoding="utf-8").read()
+check("_start_update_check guards RuntimeError on stale wrapper",
+      "except RuntimeError" in mw_src2
+      and "self._update_checker = None" in mw_src2)
+check("_on_update_checker_finished clears the Python ref",
+      "_on_update_checker_finished" in mw_src2)
 
 
 # ===========================================================================
