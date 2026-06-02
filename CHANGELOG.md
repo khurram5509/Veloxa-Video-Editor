@@ -1,3 +1,19 @@
+# Veloxa Video Editor — V14.0.2
+
+**Hot-fix release.** Three real bugs the V14.0.1 user reported.
+
+## Fixed
+
+- **Old versions stayed installed alongside the new one.** Every release dropped a versioned EXE (`Veloxa-Video-Editor-V13.1.0.exe`, `Veloxa-Video-Editor-V14.0.0.exe`, …) into the same folder and a versioned shortcut (`Veloxa Video Editor V13.1.0`, …) into the Start Menu, so users ended up with multiple side-by-side shortcuts and EXEs — and clicking the old shortcut still launched the old EXE. The installer now uses a single fixed EXE name (`Veloxa-Video-Editor.exe`) and a single fixed shortcut name (`Veloxa Video Editor`). An `[InstallDelete]` block sweeps the legacy versioned files from previous V11..V14.0.1 installs on first run of V14.0.2.
+- **Preview metadata overlay stayed visible after the queue was emptied.** The top-left overlay showing *Source / Duration / Resolution / Codec / Profile* didn't clear when the last queue row was removed — so it kept showing info from the deleted file. Fixed in all three relevant code paths (`_update_preview_info`, `_refresh_preview`, `_on_video_selected`). The preview thumbnail now also resets to the placeholder text on empty, and any in-flight playback is stopped.
+- **Setup EXE icon was missing.** Added `VersionInfoCompany` / `VersionInfoProductName` / `VersionInfoProductVersion` to the Inno Setup script so the Setup EXE shows the Veloxa orange-V icon in Windows Explorer / Downloads.
+
+## Verified working (no fix needed)
+
+- **Keyboard shortcuts** — Ctrl+O / Ctrl+Enter / Esc / Ctrl+S / Ctrl+Shift+S / Ctrl+M / F1 / Delete all wired in `_install_shortcuts` and tested.
+
+---
+
 # Veloxa Video Editor — V14.0.1
 
 **Hot-fix release.** Speeds up the in-app update download and unfreezes the GUI during it.

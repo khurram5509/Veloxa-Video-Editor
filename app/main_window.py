@@ -3067,6 +3067,23 @@ class MainWindow(QMainWindow):
             self.current_time_lbl.setText("00:00.00")
             self.preview_label.setText("Select a file to preview")
             self.preview_info_lbl.setText("")
+            # V14.0.2 fix: hide the preview metadata overlay so it
+            # doesn't keep showing the previous selection's info after
+            # the queue is emptied or the only row is removed.
+            if hasattr(self, "preview_overlay") and self.preview_overlay:
+                self.preview_overlay.hide()
+            # Stop any playback so we don't leave a paused video frame
+            # on screen after the queue is cleared.
+            if getattr(self, "_mp_player", None) is not None:
+                try:
+                    self._mp_player.stop()
+                except Exception:
+                    pass
+            if getattr(self, "_mp_video_widget", None) is not None:
+                try:
+                    self._mp_video_widget.hide()
+                except Exception:
+                    pass
             # V11.5 fix: also forget the last-rendered pixmap so a window
             # resize (which fires _render_preview_from_disk) can't bring
             # the previous selection's frame back.
@@ -3127,6 +3144,13 @@ class MainWindow(QMainWindow):
         d, _item = self._current_video()
         if not d:
             self.preview_info_lbl.setText("")
+            # V14.0.2 fix: the V14.0 metadata overlay was left showing
+            # stale info ("Source: previous_file.mp4 ...") after the
+            # queue was emptied or the only row was removed, because the
+            # early-return here skipped past the overlay block at the
+            # bottom of this method. Hide it explicitly.
+            if hasattr(self, "preview_overlay") and self.preview_overlay:
+                self.preview_overlay.hide()
             return
         # V12.3 fix: same logic as _refresh_preview — show the row's
         # profile when it differs from the loaded one, so the info bar
@@ -3292,6 +3316,34 @@ class MainWindow(QMainWindow):
             return
         d, _item = self._current_video()
         if not d or not os.path.exists(d.src):
+            # V14.0.2 fix: empty queue / missing source — clear the
+            # static thumbnail back to the placeholder, hide the V14.0
+            # metadata overlay, and (if a video was loaded) stop
+            # playback so the QVideoWidget doesn't keep the old frame
+            # visible. Previously the preview pane silently held the
+            # last-rendered thumbnail and the overlay stayed stale.
+            try:
+                self.preview_label.clear()
+                self.preview_label.setText(
+                    "Add a video or audio file. "
+                    "Drag the orange bars to set trim points.")
+            except Exception:
+                pass
+            if hasattr(self, "preview_overlay") and self.preview_overlay:
+                self.preview_overlay.hide()
+            # If a previously-loaded video is playing in the
+            # QVideoWidget overlay, stop it so the user sees the
+            # placeholder text rather than a paused frame.
+            if getattr(self, "_mp_player", None) is not None:
+                try:
+                    self._mp_player.stop()
+                except Exception:
+                    pass
+            if getattr(self, "_mp_video_widget", None) is not None:
+                try:
+                    self._mp_video_widget.hide()
+                except Exception:
+                    pass
             return
 
         # For audio rows, bail early if no visual is set.

@@ -618,7 +618,7 @@ from app.updater import (
 )
 
 # Version is correctly bumped.
-check("APP_VERSION = '14.0.1'", _APP_VERSION == "14.0.1",
+check("APP_VERSION = '14.0.2'", _APP_VERSION == "14.0.2",
       f"got {_APP_VERSION!r}")
 check("GITHUB_REPO is khurram5509/Veloxa-Video-Editor",
       _u.GITHUB_REPO == "khurram5509/Veloxa-Video-Editor",
@@ -642,7 +642,7 @@ check("'v' prefix tolerated either side",
       _vc("v13.0", "V13.0") == 0)
 
 # is_newer convenience.
-check("is_newer('14.0.1', '13.0')", _newer("14.0.1", "13.0"))
+check("is_newer('14.0.2', '13.0')", _newer("14.0.2", "13.0"))
 check("not is_newer('12.9.99', '13.0')",
       not _newer("12.9.99", "13.0"))
 check("not is_newer('13.0', '13.0')",
@@ -725,16 +725,16 @@ check("docs.py advertises auto-update feature",
 
 # Installer.iss + build.ps1 carry the new version.
 iss_src = open(ROOT / "installer.iss", encoding="utf-8").read()
-check("installer.iss AppVersion = 14.0.1", '"14.0.1"' in iss_src)
-check("installer.iss EXE name = V14.0.1.exe",
-      "Veloxa-Video-Editor-V14.0.1.exe" in iss_src)
+check("installer.iss AppVersion = 14.0.2", '"14.0.2"' in iss_src)
+check("installer.iss EXE name = V14.0.2.exe",
+      "Veloxa-Video-Editor-V14.0.2.exe" in iss_src)
 check("installer.iss preserves stable AppId across V12 -> V13",
       "F2E1A8C4-1E5B-4C9A-9B27-VELOXA-VID-V121" in iss_src)
 ps1_src = open(ROOT / "build.ps1", encoding="utf-8").read()
-check("build.ps1 builds V14.0.1 EXE",
-      "Veloxa-Video-Editor-V14.0.1" in ps1_src)
+check("build.ps1 builds V14.0.2 EXE",
+      "Veloxa-Video-Editor-V14.0.2" in ps1_src)
 
-# V14.0.1 crash-fix: stale C++-object guard in _start_update_check.
+# V14.0.2 crash-fix: stale C++-object guard in _start_update_check.
 mw_src2 = open(ROOT / "app" / "main_window.py", encoding="utf-8").read()
 check("_start_update_check guards RuntimeError on stale wrapper",
       "except RuntimeError" in mw_src2
@@ -744,9 +744,9 @@ check("_on_update_checker_finished clears the Python ref",
 
 
 # ===========================================================================
-# 13. V14.0.1: System / Light / Dark theme switcher
+# 13. V14.0.2: System / Light / Dark theme switcher
 # ===========================================================================
-section("V14.0.1: theme switcher")
+section("V14.0.2: theme switcher")
 
 from app.theme import (
     DARK_QSS, LIGHT_QSS,
@@ -769,7 +769,7 @@ check("DARK_QSS and LIGHT_QSS differ (not a copy/paste)",
 check("dark theme uses brand orange",  "#f58220" in DARK_QSS)
 check("light theme uses brand orange", "#f58220" in LIGHT_QSS)
 
-# V14.0.1: light theme redesign — depth + hierarchy.
+# V14.0.2: light theme redesign — depth + hierarchy.
 check("light theme uses qlineargradient for button/input depth",
       "qlineargradient" in LIGHT_QSS)
 check("light theme uses tinted off-white main bg (cards stand out)",
@@ -854,7 +854,7 @@ for k in AUDIO_TEMPLATE_ORDER:
           and lbl == "[vout]" and "[aout]" in fc,
           f"label={lbl!r}, fc[:60]={fc[:60]!r}")
 
-# V14.0.1: actually run each template's filter graph through FFmpeg
+# V14.0.2: actually run each template's filter graph through FFmpeg
 # (against a silent lavfi audio source) so any "Option not found" /
 # syntax errors fail loudly rather than at the user's encode time.
 import subprocess as _sp
@@ -912,9 +912,9 @@ check("profile_opts passes audio_template through",
 
 
 # ===========================================================================
-# 15. V14.0.1: updater download runs on a QThread (no more GUI freeze)
+# 15. V14.0.2: updater download runs on a QThread (no more GUI freeze)
 # ===========================================================================
-section("V14.0.1: updater download worker")
+section("V14.0.2: updater download worker")
 
 from app.updater import DownloadWorker as _DW
 import inspect as _inspectV14
@@ -949,6 +949,46 @@ check("Progress UI shows MB transferred + transfer rate",
 check("Progress bar uses 0..1000 range for sub-percent granularity",
       "QProgressDialog(\n            \"Connecting...\", \"Cancel\", 0, 1000" in mw_v141
       or 'QProgressDialog("Connecting..."' in mw_v141)
+
+
+# ===========================================================================
+# 16. V14.0.2: preview overlay clears + installer no longer side-by-side
+# ===========================================================================
+section("V14.0.2: preview clear + installer overwrite")
+
+mw_v142 = open(ROOT / "app" / "main_window.py", encoding="utf-8").read()
+
+# Preview overlay is cleared in all three early-return paths.
+check("_update_preview_info hides overlay when no current row",
+      "self.preview_overlay.hide()" in mw_v142
+      and 'def _update_preview_info(self):' in mw_v142)
+check("_refresh_preview resets preview_label + hides overlay on empty",
+      "Add a video or audio file." in mw_v142
+      and mw_v142.count("self.preview_overlay.hide()") >= 3)
+check("_on_video_selected hides overlay + stops playback on empty",
+      "Select a file to preview" in mw_v142
+      and "_mp_player.stop()" in mw_v142
+      and "_mp_video_widget.hide()" in mw_v142)
+
+# installer.iss uses an unversioned EXE name + InstallDelete sweep.
+iss_v142 = open(ROOT / "installer.iss", encoding="utf-8").read()
+check("installer EXE name is unversioned 'Veloxa-Video-Editor.exe'",
+      '#define AppExeName          "Veloxa-Video-Editor.exe"' in iss_v142)
+check("installer DestName= renames build EXE to unversioned",
+      "DestName" in iss_v142
+      and 'DestName: "{#AppExeName}"' in iss_v142)
+check("installer Start Menu shortcut is unversioned",
+      '{autoprograms}\\{#AppName}"' in iss_v142
+      and '{#AppName} V{#AppVersion}"' not in iss_v142.split("[Icons]")[1].split("[Run]")[0])
+check("installer cleans up legacy versioned EXEs",
+      "[InstallDelete]" in iss_v142
+      and "Veloxa-Video-Editor-V*.exe" in iss_v142)
+check("installer cleans up legacy versioned shortcuts",
+      "Veloxa Video Editor V*.lnk" in iss_v142
+      and "Uninstall Veloxa Video Editor V*.lnk" in iss_v142)
+check("installer sets VersionInfo* so Setup EXE icon shows",
+      "VersionInfoCompany" in iss_v142
+      and "VersionInfoProductName" in iss_v142)
 
 
 # ===========================================================================
