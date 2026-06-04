@@ -53,7 +53,7 @@ log = logging.getLogger("veloxa.updater")
 # Single source of truth for the application version. Imported by
 # ``app/docs.py``, ``app/main_window.py`` title bar, and the regression
 # tests. Bump this when cutting a new release.
-APP_VERSION = "14.0.2"
+APP_VERSION = "14.0.3"
 
 # GitHub repo to poll for releases. Format: ``owner/repo`` (no leading
 # slash, no trailing slash). Set to ``""`` to disable update checks
@@ -259,12 +259,23 @@ def download_installer(info: UpdateInfo,
     ``cancel_cb() -> bool`` is polled between chunks; returning ``True``
     aborts and deletes the partial file.
 
-    V14.0.1: chunk size bumped to 1 MB (was 64 KB). Smaller chunks
-    were both slower (more Python iterations per MB) and forced the
-    GUI thread to repaint more often when the caller wired
-    ``progress_cb`` to ``QApplication.processEvents()``. With 1 MB
-    chunks the inner loop runs ~400 times for a 400 MB installer
-    instead of ~6400 times.
+    V14.0.3 perf-fix: chunk size REVERTED to 64 KB (was 1 MB in V14.0.1
+    + V14.0.2). The V14.0.1 change to 1 MB chunks was based on the
+    wrong mental model — "fewer Python iterations = faster". In
+    practice ``urllib`` `resp.read(N)` blocks waiting for N bytes,
+    while GitHub's release CDN delivers in smaller TCP frames. Larger
+    Python-level reads stall on partial buffers. Empirical measurement
+    against the live release URL:
+
+      64 KB chunks   -> 12.3 MB/s   (Python max)
+      256 KB chunks  ->  9.9 MB/s
+      1 MB chunks    ->  8.4 MB/s   (V14.0.1's slower regression)
+      4 MB chunks    ->  0.3 MB/s   (catastrophic)
+      shutil.copyfileobj/8 MB -> 12.7 MB/s
+
+    The throttled progress signal (~10/sec) in DownloadWorker
+    decouples GUI repaint frequency from chunk size, so we can take
+    the 64 KB throughput without spamming the event queue.
     """
     if not info or not info.asset_url:
         return None
@@ -275,7 +286,7 @@ def download_installer(info: UpdateInfo,
     tmp_fd, tmp_path = tempfile.mkstemp(
         prefix=f"veloxa_update_{os.getpid()}_",
         suffix=".exe")
-    chunk_size = 1 * 1024 * 1024  # 1 MB
+    chunk_size = 64 * 1024  # V14.0.3: 64 KB — fastest for GitHub CDN.
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             total = info.asset_size or int(

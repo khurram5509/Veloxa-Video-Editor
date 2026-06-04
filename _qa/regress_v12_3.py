@@ -618,7 +618,7 @@ from app.updater import (
 )
 
 # Version is correctly bumped.
-check("APP_VERSION = '14.0.2'", _APP_VERSION == "14.0.2",
+check("APP_VERSION = '14.0.3'", _APP_VERSION == "14.0.3",
       f"got {_APP_VERSION!r}")
 check("GITHUB_REPO is khurram5509/Veloxa-Video-Editor",
       _u.GITHUB_REPO == "khurram5509/Veloxa-Video-Editor",
@@ -642,7 +642,7 @@ check("'v' prefix tolerated either side",
       _vc("v13.0", "V13.0") == 0)
 
 # is_newer convenience.
-check("is_newer('14.0.2', '13.0')", _newer("14.0.2", "13.0"))
+check("is_newer('14.0.3', '13.0')", _newer("14.0.3", "13.0"))
 check("not is_newer('12.9.99', '13.0')",
       not _newer("12.9.99", "13.0"))
 check("not is_newer('13.0', '13.0')",
@@ -725,16 +725,16 @@ check("docs.py advertises auto-update feature",
 
 # Installer.iss + build.ps1 carry the new version.
 iss_src = open(ROOT / "installer.iss", encoding="utf-8").read()
-check("installer.iss AppVersion = 14.0.2", '"14.0.2"' in iss_src)
-check("installer.iss EXE name = V14.0.2.exe",
-      "Veloxa-Video-Editor-V14.0.2.exe" in iss_src)
+check("installer.iss AppVersion = 14.0.3", '"14.0.3"' in iss_src)
+check("installer.iss EXE name = V14.0.3.exe",
+      "Veloxa-Video-Editor-V14.0.3.exe" in iss_src)
 check("installer.iss preserves stable AppId across V12 -> V13",
       "F2E1A8C4-1E5B-4C9A-9B27-VELOXA-VID-V121" in iss_src)
 ps1_src = open(ROOT / "build.ps1", encoding="utf-8").read()
-check("build.ps1 builds V14.0.2 EXE",
-      "Veloxa-Video-Editor-V14.0.2" in ps1_src)
+check("build.ps1 builds V14.0.3 EXE",
+      "Veloxa-Video-Editor-V14.0.3" in ps1_src)
 
-# V14.0.2 crash-fix: stale C++-object guard in _start_update_check.
+# V14.0.3 crash-fix: stale C++-object guard in _start_update_check.
 mw_src2 = open(ROOT / "app" / "main_window.py", encoding="utf-8").read()
 check("_start_update_check guards RuntimeError on stale wrapper",
       "except RuntimeError" in mw_src2
@@ -744,9 +744,9 @@ check("_on_update_checker_finished clears the Python ref",
 
 
 # ===========================================================================
-# 13. V14.0.2: System / Light / Dark theme switcher
+# 13. V14.0.3: System / Light / Dark theme switcher
 # ===========================================================================
-section("V14.0.2: theme switcher")
+section("V14.0.3: theme switcher")
 
 from app.theme import (
     DARK_QSS, LIGHT_QSS,
@@ -769,7 +769,7 @@ check("DARK_QSS and LIGHT_QSS differ (not a copy/paste)",
 check("dark theme uses brand orange",  "#f58220" in DARK_QSS)
 check("light theme uses brand orange", "#f58220" in LIGHT_QSS)
 
-# V14.0.2: light theme redesign — depth + hierarchy.
+# V14.0.3: light theme redesign — depth + hierarchy.
 check("light theme uses qlineargradient for button/input depth",
       "qlineargradient" in LIGHT_QSS)
 check("light theme uses tinted off-white main bg (cards stand out)",
@@ -854,7 +854,7 @@ for k in AUDIO_TEMPLATE_ORDER:
           and lbl == "[vout]" and "[aout]" in fc,
           f"label={lbl!r}, fc[:60]={fc[:60]!r}")
 
-# V14.0.2: actually run each template's filter graph through FFmpeg
+# V14.0.3: actually run each template's filter graph through FFmpeg
 # (against a silent lavfi audio source) so any "Option not found" /
 # syntax errors fail loudly rather than at the user's encode time.
 import subprocess as _sp
@@ -912,9 +912,9 @@ check("profile_opts passes audio_template through",
 
 
 # ===========================================================================
-# 15. V14.0.2: updater download runs on a QThread (no more GUI freeze)
+# 15. V14.0.3: updater download runs on a QThread (no more GUI freeze)
 # ===========================================================================
-section("V14.0.2: updater download worker")
+section("V14.0.3: updater download worker")
 
 from app.updater import DownloadWorker as _DW
 import inspect as _inspectV14
@@ -933,8 +933,9 @@ check("DownloadWorker passes a cancel callback",
 # download_installer uses 1 MB chunks.
 import app.updater as _upd
 _di_src = _inspectV14.getsource(_upd.download_installer)
-check("download_installer chunk size = 1 MB",
-      "chunk_size = 1 * 1024 * 1024" in _di_src)
+check("download_installer chunk size = 64 KB (V14.0.3 perf fix)",
+      "chunk_size = 64 * 1024" in _di_src,
+      "V14.0.1 incorrectly bumped to 1 MB and tanked throughput")
 
 # GUI now wires the worker instead of calling download_installer
 # synchronously.
@@ -952,9 +953,9 @@ check("Progress bar uses 0..1000 range for sub-percent granularity",
 
 
 # ===========================================================================
-# 16. V14.0.2: preview overlay clears + installer no longer side-by-side
+# 16. V14.0.3: preview overlay clears + installer no longer side-by-side
 # ===========================================================================
-section("V14.0.2: preview clear + installer overwrite")
+section("V14.0.3: preview clear + installer overwrite")
 
 mw_v142 = open(ROOT / "app" / "main_window.py", encoding="utf-8").read()
 

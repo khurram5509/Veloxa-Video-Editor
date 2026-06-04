@@ -1,3 +1,33 @@
+# Veloxa Video Editor — V14.0.3
+
+**Hot-fix.** Download speed regression in V14.0.1 / V14.0.2 reverted.
+
+## Fixed
+
+V14.0.1's switch from 64 KB chunks → 1 MB chunks was made on the wrong mental model ("fewer Python iterations = faster"). In practice `urllib.request`'s `resp.read(N)` blocks waiting for N bytes, while GitHub's release CDN delivers in smaller TCP frames — so the 1 MB read stalls waiting for partial buffers and *reduces* throughput.
+
+### Measured against the live V14.0.2 release URL:
+
+| Chunk size | Throughput |
+|---|---|
+| **64 KB** (V14.0.0 + V14.0.3+)| **12.3 MB/s** ⭐ |
+| 256 KB | 9.9 MB/s |
+| 1 MB (V14.0.1 + V14.0.2) | 8.4 MB/s |
+| 4 MB | 0.3 MB/s (catastrophic) |
+
+For the 395 MB installer that's the difference between **~32 s** (V14.0.3) and **~47 s** (V14.0.2) on the same connection — plus the OS / antivirus overhead the user actually experienced was much worse than the in-lab measurement.
+
+The throttled progress signal (~10/sec) in `DownloadWorker` decouples GUI repaint frequency from chunk size, so we get the 64 KB throughput without spamming the event queue.
+
+### What V14.0.1 got right, kept
+
+- `DownloadWorker(QThread)` runs the download off the GUI thread → still in place.
+- Throttled progress signals (~10/sec) → still in place.
+- Live transfer-rate read-out (MB/s) → still in place.
+- Cancel routes to worker.cancel() with chunk-boundary polling → still in place.
+
+---
+
 # Veloxa Video Editor — V14.0.2
 
 **Hot-fix release.** Three real bugs the V14.0.1 user reported.
