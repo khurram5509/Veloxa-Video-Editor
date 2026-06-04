@@ -57,9 +57,17 @@ def _socket_name() -> str:
 
 
 SOCKET_NAME = _socket_name()
-CONNECT_TIMEOUT_MS = 1000
-WRITE_TIMEOUT_MS = 1000
+CONNECT_TIMEOUT_MS = 600
+WRITE_TIMEOUT_MS = 600
+# V14.1.1: ACK handshake. The primary writes ACK_MAGIC back after
+# handling the activate request. If the new instance doesn't receive
+# the ACK within ACK_TIMEOUT_MS, the primary is dead or wedged and
+# the new instance promotes itself. Prevents the "after the update,
+# 'already running' error" bug where the new EXE saw the old EXE's
+# still-open pipe during teardown and exited.
+ACK_TIMEOUT_MS = 1500
 ACTIVATE_MAGIC = b"activate\n"
+ACK_MAGIC = b"OK\n"
 
 
 # ------------------------------------------------------------------ public
@@ -88,20 +96,37 @@ def request_single_instance(timeout_ms: int = CONNECT_TIMEOUT_MS) -> bool:
     Always returns ``True`` if both connect and listen fail (degrades
     open rather than blocking startup on a wedged pipe).
     """
-    # Step 1: try to contact an existing primary.
+    # Step 1: try to contact an existing primary AND verify it
+    # responds. The waitForReadyRead + ACK byte is what distinguishes
+    # a live primary from a stale pipe held by an exiting old version
+    # of the app (the failure mode the user hit after V14.0.x -> V14.1.0
+    # update — installer launched the new EXE while the old one was
+    # still tearing down).
     sock = QLocalSocket()
     sock.connectToServer(SOCKET_NAME)
     if sock.waitForConnected(timeout_ms):
         try:
             sock.write(ACTIVATE_MAGIC)
             sock.waitForBytesWritten(WRITE_TIMEOUT_MS)
-            sock.disconnectFromServer()
+            if sock.waitForReadyRead(ACK_TIMEOUT_MS):
+                data = bytes(sock.readAll())
+                if ACK_MAGIC.strip() in data:
+                    sock.disconnectFromServer()
+                    sock.close()
+                    log.info("Second instance: primary acknowledged, exiting.")
+                    return False
+            # No ACK -> primary is dead or wedged. Fall through to
+            # take over as primary.
+            log.info("Pipe was open but no ACK received — "
+                     "stale endpoint, taking over.")
         finally:
+            try:
+                sock.disconnectFromServer()
+            except Exception:
+                pass
             sock.close()
-        log.info("Second instance: signalled primary and exiting.")
-        return False
-    # No primary responded — we'll BE the primary.
-    sock.close()
+    else:
+        sock.close()
 
     # Step 2: bind a server on the same name. ``removeServer`` first
     # in case a previous primary crashed and left a stale endpoint.
@@ -142,8 +167,18 @@ def _on_new_connection():
 
     # Read whatever the second instance wrote. The ``activate`` magic
     # is just a sanity check; any non-empty payload activates the
-    # window. We close as soon as we see bytes.
+    # window. After running the activation callback we write ACK_MAGIC
+    # back so the second instance knows we're alive (V14.1.1 fix:
+    # without the ACK, a new instance launched right after an installer
+    # upgrade could see the old EXE's still-open pipe, think it was a
+    # valid primary, and exit with "already running" before the user
+    # ever sees the new app).
+    handled = [False]
+
     def _read_and_act():
+        if handled[0]:
+            return
+        handled[0] = True
         try:
             data = bytes(sock.readAll())
             if data:
@@ -153,6 +188,13 @@ def _on_new_connection():
                         cb()
                     except Exception as exc:
                         log.warning("activation callback raised: %s", exc)
+            # ACK regardless of payload contents — the act of writing
+            # back is what proves liveness to the second instance.
+            try:
+                sock.write(ACK_MAGIC)
+                sock.waitForBytesWritten(500)
+            except Exception:
+                pass
         finally:
             try:
                 sock.disconnectFromServer()

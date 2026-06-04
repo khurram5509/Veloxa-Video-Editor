@@ -110,7 +110,14 @@ def setup_logging() -> Path:
         console.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
         root.addHandler(console)
 
-    root.info("Veloxa Video Editor V13.0 session start; logging to %s", log_file)
+    # V14.1.1: read version dynamically so it never goes stale again.
+    try:
+        from .updater import APP_VERSION
+        _ver = APP_VERSION
+    except Exception:
+        _ver = "?"
+    root.info("Veloxa Video Editor V%s session start; logging to %s",
+              _ver, log_file)
     return log_file
 
 

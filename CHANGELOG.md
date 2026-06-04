@@ -1,3 +1,27 @@
+# Veloxa Video Editor — V14.1.1
+
+**Hot-fix.** The V14.1.0 single-instance guard misfired immediately after an in-app update.
+
+## Fixed
+
+V14.1.0 added single-instance enforcement via a Qt named pipe. After the in-app updater quit V14.0.x and launched V14.1.0, the new EXE sometimes started **while the old process was still tearing down**. It saw the old EXE's named pipe still open, treated it as a live primary, and exited with an *"already running"* message. The user had to close that dialog and launch again — second launch worked because the old process was fully dead by then.
+
+### Fix: ACK-based liveness handshake
+
+- The primary instance now **writes an `OK` byte back** after running the activation callback.
+- A new instance writes `activate`, then **waits up to 1.5 s for the ACK** before deciding it's a duplicate.
+- If no ACK arrives, the primary is dead or wedged. The new instance promotes itself, takes over the pipe, and starts normally.
+
+This means:
+- A real second launch still gets the "already running" path: existing window comes to the front, second exits cleanly.
+- An update-relaunch where the old EXE's pipe is briefly still up: the new EXE notices the silence, takes over, and starts normally. **No more "already running" dialog after update.**
+
+## Also fixed
+
+- **Session-start log** in `app/persistence.py` was hardcoded to *"V13.0"* — every release since V13.0 reported the wrong version in `%APPDATA%\Veloxa-VD\V10\logs\*.log`. Now reads `APP_VERSION` from `app/updater.py` dynamically; future bumps only need to touch the one constant.
+
+---
+
 # Veloxa Video Editor — V14.1.0
 
 **Minor release.** Single-instance enforcement + HiDPI awareness + responsive-window hardening.
