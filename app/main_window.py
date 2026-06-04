@@ -146,6 +146,14 @@ class MainWindow(QMainWindow):
         self.log_file_path = log_file_path
         self.setWindowIcon(app_icon)
         self.setWindowTitle(f"Veloxa Video Editor V{VELOXA_APP_VERSION}")
+        # V14.1: 1024x680 is the smallest sensible footprint where all
+        # tabs are usable on a 1280x720 screen at 100% scaling. The
+        # 1320x960 default still applies for fresh launches but the
+        # window can no longer be dragged down below 1024x680 — the
+        # bottom Start/Pause/Cancel bar was being clipped at smaller
+        # sizes. saveGeometry/restoreGeometry then takes over on
+        # subsequent launches (loaded in _load_settings).
+        self.setMinimumSize(QSize(1024, 680))
         self.resize(1320, 960)
         self.setAcceptDrops(True)
 

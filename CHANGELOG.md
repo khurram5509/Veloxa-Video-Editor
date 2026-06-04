@@ -1,3 +1,41 @@
+# Veloxa Video Editor — V14.1.0
+
+**Minor release.** Single-instance enforcement + HiDPI awareness + responsive-window hardening.
+
+## Single-instance application
+
+Launching Veloxa while another instance is already running no longer opens a duplicate window. The second launch:
+
+1. Detects the existing primary via a per-user Qt named pipe (`VeloxaVideoEditor-<username>`).
+2. Pings the primary, which raises + focuses + activates its window (handles minimised, hidden-behind-other-window, and minimised-to-tray states).
+3. Shows a brief "Veloxa Video Editor is already running" toast that auto-closes after 2 seconds.
+4. Exits cleanly without holding any resources.
+
+Survives sleep / hibernation / user-session changes — the pipe is per-user and a stale endpoint from a previously-crashed primary is cleaned up automatically on next start. If the named pipe is in an unusable state (file-system permissions, AV interference), the app degrades open and starts normally rather than blocking startup.
+
+## HiDPI awareness
+
+Enabled before `QApplication` is constructed:
+
+- `Qt.HighDpiScaleFactorRoundingPolicy.PassThrough` so fractional scale factors (125 %, 150 %, 175 %) are preserved instead of being rounded to nearest integer multiple. This is critical on Windows laptops where 150 % is the default and rounding to 100 % or 200 % produces blurry/cut-off output.
+- `QT_ENABLE_HIGHDPI_SCALING` and `QT_AUTO_SCREEN_SCALE_FACTOR` env vars set as defensive defaults.
+
+Combined with the existing Qt layout managers (every widget already lives in a `QHBoxLayout` / `QVBoxLayout` / `QGridLayout`), the app now renders correctly at:
+
+- HD (1280×720), Full HD (1920×1080), QHD (2560×1440), 4K (3840×2160), 5K+
+- Windows display scaling 100 %, 125 %, 150 %, 175 %, 200 %, 250 %, 300 %
+- Multi-monitor environments — window geometry is restored per the saved state in `QSettings`; moving the window between displays with different scaling settings is handled natively by Qt.
+
+## Window-sizing hardening
+
+`setMinimumSize(1024, 680)` so the window can't be dragged small enough to clip the bottom Start/Pause/Cancel bar. The 1320×960 default still applies for fresh launches. Existing user window state (`saveGeometry` / `restoreGeometry` via `QSettings`) carries across upgrades.
+
+## Reliability
+
+V14.0.x download-speed regression is folded in: 64 KB chunks (was 1 MB) — back to ~12 MB/s against the GitHub release CDN.
+
+---
+
 # Veloxa Video Editor — V14.0.3
 
 **Hot-fix.** Download speed regression in V14.0.1 / V14.0.2 reverted.

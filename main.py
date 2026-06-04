@@ -1,4 +1,4 @@
-"""Veloxa Video Editor V13.0 - entry point.
+"""Veloxa Video Editor V14.1 - entry point.
 
 If ``--cli`` is on argv, dispatch to the headless CLI runner. Otherwise
 launch the Qt GUI. All real logic lives in the ``engine`` and ``app``
@@ -6,6 +6,7 @@ packages.
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -24,6 +25,27 @@ def _load_icon():
     return make_runtime_icon()
 
 
+def _enable_high_dpi():
+    """V14.1.0: enable Qt's HiDPI scaling BEFORE QApplication is
+    constructed. PassThrough rounding means we preserve fractional
+    scale factors (125%, 150%, 175%, …) instead of snapping to
+    integer multiples — important on Windows where most laptops use
+    150% by default and snapping to 100% or 200% looks wrong.
+    """
+    from PyQt6.QtCore import Qt
+    try:
+        from PyQt6.QtGui import QGuiApplication
+        QGuiApplication.setHighDpiScaleFactorRoundingPolicy(
+            Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
+    except Exception:
+        pass
+    # The two env vars below are set BEFORE QApplication construction
+    # so they take effect for this process. Defensive — most Qt6
+    # builds enable HiDPI by default, but explicit beats implicit.
+    os.environ.setdefault("QT_ENABLE_HIGHDPI_SCALING", "1")
+    os.environ.setdefault("QT_AUTO_SCREEN_SCALE_FACTOR", "1")
+
+
 def main():
     # CLI mode: avoid pulling in QtWidgets / building a window.
     if "--cli" in sys.argv:
@@ -32,13 +54,17 @@ def main():
         from app.cli import run_cli
         sys.exit(run_cli(argv))
 
+    # V14.1: HiDPI before any Qt class is instantiated.
+    _enable_high_dpi()
+
     # GUI mode.
     from PyQt6.QtCore import QSettings
     from PyQt6.QtGui import QFont
-    from PyQt6.QtWidgets import QApplication
+    from PyQt6.QtWidgets import QApplication, QMessageBox
     from app.main_window import MainWindow
     from app.persistence import setup_logging, prune_old_logs
     from app.theme import apply_theme, THEME_SYSTEM
+    from app import single_instance
 
     log_file = setup_logging()
     prune_old_logs(keep=30)
@@ -55,9 +81,54 @@ def main():
     icon = _load_icon()
     app.setWindowIcon(icon)
 
+    # V14.1: single-instance guard. If another instance is already
+    # running, ping it (which raises + focuses its window) and exit.
+    if not single_instance.request_single_instance():
+        # A primary instance was found and signalled — show a quick
+        # toast and exit. Using a tray-style modal so the user gets
+        # immediate feedback their click registered.
+        msg = QMessageBox()
+        msg.setWindowIcon(icon)
+        msg.setIcon(QMessageBox.Icon.Information)
+        msg.setWindowTitle("Veloxa Video Editor")
+        msg.setText("Veloxa Video Editor is already running.")
+        msg.setInformativeText(
+            "The existing window has been brought to the front.")
+        # Auto-close after 2 seconds so the user doesn't have to dismiss.
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(2000, msg.close)
+        msg.exec()
+        sys.exit(0)
+
     w = MainWindow(icon, log_file)
+    # V14.1: wire single-instance activation to the main window so a
+    # second launch raises + focuses this one.
+    single_instance.install_activation_handler(
+        lambda: _activate_window(w))
     w.show()
     sys.exit(app.exec())
+
+
+def _activate_window(w):
+    """V14.1: bring the main window to the foreground in response to
+    a second-instance launch. Handles minimised, hidden, and
+    background-but-visible cases."""
+    from PyQt6.QtCore import Qt
+    try:
+        if w.isMinimized():
+            w.showNormal()
+        if not w.isVisible():
+            w.show()
+        w.raise_()
+        # activateWindow is the canonical "give me focus" call;
+        # setWindowState with the active flag is a belt-and-braces
+        # for the minimised+hidden cases.
+        w.setWindowState(
+            (w.windowState() & ~Qt.WindowState.WindowMinimized)
+            | Qt.WindowState.WindowActive)
+        w.activateWindow()
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

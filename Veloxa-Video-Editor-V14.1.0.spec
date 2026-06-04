@@ -8,6 +8,8 @@ tmp_ret = collect_all('PyQt6.QtMultimedia')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('PyQt6.QtMultimediaWidgets')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('PyQt6.QtNetwork')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
 a = Analysis(
@@ -31,7 +33,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='Veloxa-Video-Editor-V14.0.3',
+    name='Veloxa-Video-Editor-V14.1.0',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

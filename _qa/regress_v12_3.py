@@ -618,7 +618,7 @@ from app.updater import (
 )
 
 # Version is correctly bumped.
-check("APP_VERSION = '14.0.3'", _APP_VERSION == "14.0.3",
+check("APP_VERSION = '14.1.0'", _APP_VERSION == "14.1.0",
       f"got {_APP_VERSION!r}")
 check("GITHUB_REPO is khurram5509/Veloxa-Video-Editor",
       _u.GITHUB_REPO == "khurram5509/Veloxa-Video-Editor",
@@ -642,7 +642,7 @@ check("'v' prefix tolerated either side",
       _vc("v13.0", "V13.0") == 0)
 
 # is_newer convenience.
-check("is_newer('14.0.3', '13.0')", _newer("14.0.3", "13.0"))
+check("is_newer('14.1.0', '13.0')", _newer("14.1.0", "13.0"))
 check("not is_newer('12.9.99', '13.0')",
       not _newer("12.9.99", "13.0"))
 check("not is_newer('13.0', '13.0')",
@@ -725,16 +725,16 @@ check("docs.py advertises auto-update feature",
 
 # Installer.iss + build.ps1 carry the new version.
 iss_src = open(ROOT / "installer.iss", encoding="utf-8").read()
-check("installer.iss AppVersion = 14.0.3", '"14.0.3"' in iss_src)
-check("installer.iss EXE name = V14.0.3.exe",
-      "Veloxa-Video-Editor-V14.0.3.exe" in iss_src)
+check("installer.iss AppVersion = 14.1.0", '"14.1.0"' in iss_src)
+check("installer.iss EXE name = V14.1.0.exe",
+      "Veloxa-Video-Editor-V14.1.0.exe" in iss_src)
 check("installer.iss preserves stable AppId across V12 -> V13",
       "F2E1A8C4-1E5B-4C9A-9B27-VELOXA-VID-V121" in iss_src)
 ps1_src = open(ROOT / "build.ps1", encoding="utf-8").read()
-check("build.ps1 builds V14.0.3 EXE",
-      "Veloxa-Video-Editor-V14.0.3" in ps1_src)
+check("build.ps1 builds V14.1.0 EXE",
+      "Veloxa-Video-Editor-V14.1.0" in ps1_src)
 
-# V14.0.3 crash-fix: stale C++-object guard in _start_update_check.
+# V14.1.0 crash-fix: stale C++-object guard in _start_update_check.
 mw_src2 = open(ROOT / "app" / "main_window.py", encoding="utf-8").read()
 check("_start_update_check guards RuntimeError on stale wrapper",
       "except RuntimeError" in mw_src2
@@ -744,9 +744,9 @@ check("_on_update_checker_finished clears the Python ref",
 
 
 # ===========================================================================
-# 13. V14.0.3: System / Light / Dark theme switcher
+# 13. V14.1.0: System / Light / Dark theme switcher
 # ===========================================================================
-section("V14.0.3: theme switcher")
+section("V14.1.0: theme switcher")
 
 from app.theme import (
     DARK_QSS, LIGHT_QSS,
@@ -769,7 +769,7 @@ check("DARK_QSS and LIGHT_QSS differ (not a copy/paste)",
 check("dark theme uses brand orange",  "#f58220" in DARK_QSS)
 check("light theme uses brand orange", "#f58220" in LIGHT_QSS)
 
-# V14.0.3: light theme redesign — depth + hierarchy.
+# V14.1.0: light theme redesign — depth + hierarchy.
 check("light theme uses qlineargradient for button/input depth",
       "qlineargradient" in LIGHT_QSS)
 check("light theme uses tinted off-white main bg (cards stand out)",
@@ -854,7 +854,7 @@ for k in AUDIO_TEMPLATE_ORDER:
           and lbl == "[vout]" and "[aout]" in fc,
           f"label={lbl!r}, fc[:60]={fc[:60]!r}")
 
-# V14.0.3: actually run each template's filter graph through FFmpeg
+# V14.1.0: actually run each template's filter graph through FFmpeg
 # (against a silent lavfi audio source) so any "Option not found" /
 # syntax errors fail loudly rather than at the user's encode time.
 import subprocess as _sp
@@ -912,9 +912,9 @@ check("profile_opts passes audio_template through",
 
 
 # ===========================================================================
-# 15. V14.0.3: updater download runs on a QThread (no more GUI freeze)
+# 15. V14.1.0: updater download runs on a QThread (no more GUI freeze)
 # ===========================================================================
-section("V14.0.3: updater download worker")
+section("V14.1.0: updater download worker")
 
 from app.updater import DownloadWorker as _DW
 import inspect as _inspectV14
@@ -933,7 +933,7 @@ check("DownloadWorker passes a cancel callback",
 # download_installer uses 1 MB chunks.
 import app.updater as _upd
 _di_src = _inspectV14.getsource(_upd.download_installer)
-check("download_installer chunk size = 64 KB (V14.0.3 perf fix)",
+check("download_installer chunk size = 64 KB (V14.1.0 perf fix)",
       "chunk_size = 64 * 1024" in _di_src,
       "V14.0.1 incorrectly bumped to 1 MB and tanked throughput")
 
@@ -953,9 +953,9 @@ check("Progress bar uses 0..1000 range for sub-percent granularity",
 
 
 # ===========================================================================
-# 16. V14.0.3: preview overlay clears + installer no longer side-by-side
+# 16. V14.1.0: preview overlay clears + installer no longer side-by-side
 # ===========================================================================
-section("V14.0.3: preview clear + installer overwrite")
+section("V14.1.0: preview clear + installer overwrite")
 
 mw_v142 = open(ROOT / "app" / "main_window.py", encoding="utf-8").read()
 
@@ -990,6 +990,49 @@ check("installer cleans up legacy versioned shortcuts",
 check("installer sets VersionInfo* so Setup EXE icon shows",
       "VersionInfoCompany" in iss_v142
       and "VersionInfoProductName" in iss_v142)
+
+
+# ===========================================================================
+# 17. V14.1.0: Single instance + HiDPI + responsive hardening
+# ===========================================================================
+section("V14.1.0: single-instance, HiDPI, min size")
+
+# Single-instance module exists and exposes the public API.
+from app import single_instance as _si
+check("single_instance.request_single_instance callable",
+      callable(_si.request_single_instance))
+check("single_instance.install_activation_handler callable",
+      callable(_si.install_activation_handler))
+check("single_instance.SOCKET_NAME is per-user (contains current user)",
+      isinstance(_si.SOCKET_NAME, str)
+      and _si.SOCKET_NAME.startswith("VeloxaVideoEditor-"))
+check("single_instance uses QLocalServer + QLocalSocket",
+      "QLocalServer" in inspect.getsource(_si)
+      and "QLocalSocket" in inspect.getsource(_si))
+
+# main.py wires HiDPI, single-instance, and activation focus handler.
+main_v141 = open(ROOT / "main.py", encoding="utf-8").read()
+check("main.py enables HiDPI before QApplication",
+      "_enable_high_dpi()" in main_v141
+      and "PassThrough" in main_v141)
+check("main.py calls request_single_instance",
+      "request_single_instance" in main_v141)
+check("main.py installs activation handler that focuses window",
+      "install_activation_handler" in main_v141
+      and "_activate_window" in main_v141)
+check("main.py shows 'already running' dialog on second-instance",
+      "already running" in main_v141 or "is already running" in main_v141)
+check("main.py title docstring bumped to V14.1",
+      "Veloxa Video Editor V14.1" in main_v141)
+
+# MainWindow has a sensible minimum size + still saves/restores geometry.
+mw_v141 = open(ROOT / "app" / "main_window.py", encoding="utf-8").read()
+check("MainWindow setMinimumSize 1024x680 set",
+      "setMinimumSize(QSize(1024, 680))" in mw_v141)
+check("MainWindow still calls restoreGeometry on load",
+      "restoreGeometry" in mw_v141)
+check("MainWindow still calls saveGeometry on close",
+      "saveGeometry" in mw_v141)
 
 
 # ===========================================================================
