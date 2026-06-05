@@ -1,3 +1,50 @@
+# Veloxa Video Editor — V14.3.0
+
+**Minor release.** Optional parallel CPU encoder slot + add-files-while-batch-runs.
+
+## New: "Also use CPU encoder when GPU is busy"
+
+Settings → Output → new checkbox **"Also use CPU encoder when GPU is busy (parallel slot)"** (default OFF). When enabled, the BatchManager opens *one extra* concurrent slot beyond your existing GPU-slot count and runs that slot through `libx264` or `libx265` (matched to the codec family you picked). Net effect: instead of N parallel GPU jobs, you get N GPU + 1 CPU jobs at the same time, with the CPU job's output written to the same queue with no extra wiring.
+
+- **Live toggle.** The checkbox accepts changes at any time — including mid-batch. Turning it ON spawns a CPU job on the next dispatch tick (within seconds). Turning it OFF stops opening new CPU slots immediately, but the in-flight CPU job is allowed to finish (no way to safely re-nice a running FFmpeg).
+- **Hard cap.** Total concurrent jobs are capped at **4** regardless of slider + CPU-slot math. Protects the machine from runaway counts on high-core systems.
+- **Belt-and-braces safety** so the system can't hang:
+    - **Process priority drop.** CPU FFmpeg processes start at `BELOW_NORMAL_PRIORITY_CLASS` on Windows (Popen creationflags) and `nice +5` on macOS / Linux (Popen preexec_fn). The interactive UI never starves.
+    - **Thread cap.** CPU FFmpeg gets `-threads max(1, (cpu_count - 2) // 2)` so it can't saturate every core when a GPU job is also running.
+    - **RAM watchdog.** Before opening a CPU slot, the BatchManager checks free system RAM via `psutil`. If less than 10% is free, the CPU slot is skipped this dispatch tick — the GPU jobs still run, the CPU slot just stays closed until RAM frees up. Fails open if `psutil` isn't installed.
+
+## New: add files while a batch is rendering
+
+The **Add Files** button is now ALWAYS enabled — even mid-batch. The Remove / Delete / Clear buttons stay locked while a batch is running (touching the active queue mid-render would break rotation indices).
+
+When you add files during a running batch, they're appended to the end of the BatchManager's pending queue via the new `BatchManager.add_jobs()` API and picked up the moment a slot frees. The status bar shows e.g. *"Added 3 file(s) to running batch."*
+
+## Files / APIs
+
+New:
+- `engine/system_resources.py` — `low_priority_popen_kwargs()`, `cpu_encoder_thread_count()`, `enough_ram_for_cpu_job()`, `force_cpu_encoder()`.
+- `BatchManager.HARD_CAP_CONCURRENT = 4`
+- `BatchManager.set_use_cpu_slot(enabled)` — live toggle.
+- `BatchManager.add_jobs(new_jobs)` — append to the running queue.
+- `BatchManager.effective_concurrency()` — computed limit (GPU slots + optional CPU slot, clamped to HARD_CAP).
+- `JobRunner._cpu_threads_flag()` — emits `-threads N` only on CPU-slot jobs using libx264/libx265.
+
+Modified:
+- `JobRunner._run_ffmpeg` — wraps `subprocess.Popen` with low-priority creationflags/preexec_fn when `opts["_cpu_slot"]` is set.
+- `main_window._add_files` — no longer blocked when the batch is running; tail items go through `_build_jobs_for_items` and `BatchManager.add_jobs()`.
+- `main_window._set_queue_locked` — `add_btn` is left enabled at all times.
+- `requirements.txt` — adds `psutil>=5.9` (used by the RAM watchdog; fails open if missing).
+
+## How to try it
+
+1. Update to V14.3.0 (Help → Check for Updates…).
+2. Open Settings → Output → tick **"Also use CPU encoder when GPU is busy (parallel slot)"**.
+3. Queue a few files, hit **Start Batch**. You'll see one extra concurrent job firing at lower priority. Open Task Manager / Activity Monitor — the FFmpeg using `libx264`/`libx265` is the CPU slot.
+4. Mid-render, click **Add Files** — the new items append to the queue and run after current jobs.
+5. Toggle the checkbox during the render — turning it OFF stops opening new CPU slots; the current one finishes.
+
+---
+
 # Veloxa Video Editor — V14.2.0
 
 **Minor release.** First macOS build.

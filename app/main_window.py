@@ -386,7 +386,13 @@ class MainWindow(QMainWindow):
         return box
 
     def _set_queue_locked(self, locked: bool):
-        self.add_btn.setEnabled(not locked)
+        # V14.3.0: Add Files stays enabled during a batch — newly-added
+        # rows go to the end of the pending queue and are picked up by
+        # the running BatchManager automatically. Destructive actions
+        # (Remove, Remove Done, Remove Completed, Clear All) remain
+        # disabled so the user can't pull the rug out from under the
+        # encoder mid-job.
+        self.add_btn.setEnabled(True)
         self.remove_btn.setEnabled(not locked)
         self.remove_done_btn.setEnabled(not locked)
         self.clear_done_btn.setEnabled(not locked)
@@ -1237,6 +1243,27 @@ class MainWindow(QMainWindow):
         g.addWidget(self.hw_decode, r, 0, 1, 2)
         r += 1
 
+        # V14.3.0: parallel CPU encoder slot. When ticked, the batch
+        # opens ONE extra concurrent job slot whose encoder is forced
+        # to libx264 / libx265 and runs at below-normal priority with
+        # a thread-cap so the GPU job + GUI stay responsive. Safe to
+        # toggle on/off mid-batch.
+        self.use_cpu_alongside_gpu = QCheckBox(
+            "Also use CPU encoder when GPU is busy (parallel slot)")
+        self.use_cpu_alongside_gpu.setChecked(False)
+        self.use_cpu_alongside_gpu.setToolTip(
+            "Open an additional concurrent encoder slot that uses the "
+            "CPU (libx264 / libx265) so a 2-file batch can encode in "
+            "parallel: one on the GPU, one on the CPU. The CPU job is "
+            "automatically threaded so the OS / GUI keep responding "
+            "and is paused for any tick where free RAM drops below "
+            "10%. Safe to flip on or off during a running batch — the "
+            "in-flight CPU job finishes naturally.")
+        self.use_cpu_alongside_gpu.toggled.connect(
+            self._on_use_cpu_alongside_gpu_toggled)
+        g.addWidget(self.use_cpu_alongside_gpu, r, 0, 1, 2)
+        r += 1
+
         # Audio fade in / out (post-trim, post-speed).
         self.fade_in = QDoubleSpinBox()
         self.fade_in.setRange(0.0, 30.0); self.fade_in.setDecimals(2)
@@ -1422,6 +1449,24 @@ class MainWindow(QMainWindow):
         else:
             self.batch.pause()
         # Button label / status flip in _on_paused_changed below.
+
+    def _on_use_cpu_alongside_gpu_toggled(self, checked: bool):
+        """V14.3.0: propagate the checkbox state to the running
+        BatchManager (if any). ``set_use_cpu_slot`` accepts the change
+        at any time — turning ON opens an extra slot on the next
+        dispatch tick; turning OFF stops spawning new CPU jobs but
+        lets the in-flight CPU job finish naturally."""
+        if self.batch is not None:
+            try:
+                self.batch.set_use_cpu_slot(bool(checked))
+            except Exception as exc:
+                log.warning("set_use_cpu_slot failed: %s", exc)
+        # Persist immediately so the toggle survives an app crash mid-batch.
+        try:
+            self.settings.setValue(
+                "use_cpu_alongside_gpu", bool(checked))
+        except Exception:
+            pass
 
     def _on_paused_changed(self, paused: bool):
         """V12.3: react to BatchManager's pause-state signal."""
@@ -2170,11 +2215,10 @@ class MainWindow(QMainWindow):
         return None, None, 0.0
 
     def _add_files(self, paths):
-        if self._queue_locked:
-            self.status_lbl.setText(
-                "Cannot add files while a batch is running")
-            return
-
+        # V14.3.0: removed the queue-lock block on adding files.
+        # New rows go to the end of the queue. If a batch is currently
+        # running, the BatchManager picks them up via add_jobs at the
+        # bottom of this method.
         existing = {self._item_data(self.file_list.item(i)).src
                     for i in range(self.file_list.count())}
         new_paths = [p for p in paths if p not in existing
@@ -2225,6 +2269,28 @@ class MainWindow(QMainWindow):
         # UI-fix: every newly-installed row gets its selection style
         # applied (matters mostly for the row that just became current).
         self._apply_row_selection_styles()
+        # V14.3.0: if a batch is already running, hand the newly-added
+        # rows to the BatchManager via add_jobs(). The dispatch loop
+        # picks them up automatically when a slot frees, so the user
+        # doesn't have to stop+restart the batch.
+        if (self.batch and self.batch.is_running()
+                and len(new_paths) > 0):
+            try:
+                opts = self._collect_opts()
+                # Build job tuples for ONLY the rows we just added —
+                # the last len(new_paths) items of self.file_list.
+                start = self.file_list.count() - len(new_paths)
+                tail_items = [self.file_list.item(start + i)
+                              for i in range(len(new_paths))]
+                jobs_tail = self._build_jobs_for_items(
+                    tail_items, opts) if hasattr(
+                    self, "_build_jobs_for_items") else []
+                if jobs_tail:
+                    self.batch.add_jobs(jobs_tail)
+                    self.status_lbl.setText(
+                        f"Added {len(jobs_tail)} file(s) to running batch.")
+            except Exception as exc:
+                log.warning("add_jobs during batch failed: %s", exc)
 
     def _item_data(self, item) -> QueueItemData:
         return item.data(Qt.ItemDataRole.UserRole) if item else None
@@ -3277,6 +3343,9 @@ class MainWindow(QMainWindow):
             "fade_in": float(self.fade_in.value()),
             "fade_out": float(self.fade_out.value()),
             "hw_decode": self.hw_decode.isChecked(),
+            # V14.3.0: parallel CPU encoder slot toggle.
+            "use_cpu_alongside_gpu":
+                self.use_cpu_alongside_gpu.isChecked(),
             # Split-on-length: limit each output's duration; oversized inputs
             # become Part1 / Part2 / ... at job-build time.
             "split_enabled": self.split_enabled.isChecked(),
@@ -3687,6 +3756,9 @@ class MainWindow(QMainWindow):
             self.fade_in.setValue(float(d.get("fade_in", 0.0) or 0.0))
             self.fade_out.setValue(float(d.get("fade_out", 0.0) or 0.0))
             self.hw_decode.setChecked(bool(d.get("hw_decode", True)))
+            # V14.3.0: profile-level persistence of the parallel CPU slot.
+            self.use_cpu_alongside_gpu.setChecked(
+                bool(d.get("use_cpu_alongside_gpu", False)))
             self.split_enabled.setChecked(bool(d.get("split_enabled", False)))
             self.split_max_minutes.setValue(
                 float(d.get("split_max_minutes", 10.0) or 10.0))
@@ -4019,6 +4091,56 @@ class MainWindow(QMainWindow):
             # audio rows under that profile.
             if advanced != self._pv_get_counter(pname):
                 self._pv_set_counter(pname, advanced)
+        return jobs
+
+    def _build_jobs_for_items(self, items: list, opts: dict) -> list:
+        """V14.3.0: build job tuples for a SUBSET of queue items, used
+        by the "add files during batch" flow. Differences from the
+        full :meth:`_build_jobs`:
+
+        * Uses ``max(self._runner_to_row)+1`` as the starting runner
+          index, so we don't collide with runners already in flight.
+        * Does NOT advance per-profile audio-visual rotation counters
+          (the running batch already seeded them; we just reuse the
+          current count for newly-added rows).
+        * Does NOT honour split-on-length for the new rows — if the
+          user wants to split mid-batch additions they can stop +
+          restart the batch. Keeps this helper trivially safe.
+
+        Returns a list of job tuples in the same shape JobRunner /
+        BatchManager expect.
+        """
+        if not items:
+            return []
+        existing_runner_idxs = list(getattr(self, "_runner_to_row", {}).keys())
+        next_runner_idx = (max(existing_runner_idxs) + 1
+                           if existing_runner_idxs else 0)
+        if not hasattr(self, "_runner_to_row"):
+            self._runner_to_row = {}
+        jobs = []
+        for item in items:
+            d = self._item_data(item)
+            if not d:
+                continue
+            if d.status == "done":
+                continue
+            row_opts = self._opts_for_row(d.profile_name, opts)
+            dst = self._dst_for(d.src, batch_idx=0,
+                                part_no=1, n_parts=1,
+                                opts_override=row_opts)
+            per_job = None
+            if (d.profile_name and d.profile_name != NO_PROFILE
+                    and d.profile_name in self.profiles):
+                per_job = dict(row_opts)
+            # Map runner idx -> file_list row index for signal routing.
+            try:
+                row = self.file_list.row(item)
+            except Exception:
+                row = -1
+            self._runner_to_row[next_runner_idx] = row
+            jobs.append((next_runner_idx, d.src, dst, d.kind,
+                         d.visual_path, d.visual_kind, per_job))
+            next_runner_idx += 1
         return jobs
 
     def _start_batch(self):
@@ -4555,6 +4677,11 @@ class MainWindow(QMainWindow):
             if isinstance(hw_val, str):
                 hw_val = hw_val.lower() in ("true", "1", "yes")
             self.hw_decode.setChecked(bool(hw_val))
+            # V14.3.0: persisted parallel CPU encoder slot toggle.
+            cpu_val = s.value("use_cpu_alongside_gpu", False)
+            if isinstance(cpu_val, str):
+                cpu_val = cpu_val.lower() in ("true", "1", "yes")
+            self.use_cpu_alongside_gpu.setChecked(bool(cpu_val))
             # V12.3.1: persisted quality tier + intro/outro. Back-compat:
             # if QSettings carries an int from the V12.3 numeric UI under
             # ``video_bitrate_kbps`` / ``audio_bitrate_kbps``, map it to
@@ -4655,6 +4782,9 @@ class MainWindow(QMainWindow):
         s.setValue("fade_in", float(self.fade_in.value()))
         s.setValue("fade_out", float(self.fade_out.value()))
         s.setValue("hw_decode", self.hw_decode.isChecked())
+        # V14.3.0: persist the CPU-slot toggle across sessions.
+        s.setValue("use_cpu_alongside_gpu",
+                   self.use_cpu_alongside_gpu.isChecked())
         # V12.3.1: persist quality tier + intro/outro across sessions.
         # We save the tier label (the dropdown selection). The legacy
         # ``video_bitrate_kbps`` / ``audio_bitrate_kbps`` keys are kept

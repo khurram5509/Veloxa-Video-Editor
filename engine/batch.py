@@ -75,6 +75,23 @@ class JobRunner(QThread):
             except Exception:
                 pass
 
+    def _cpu_threads_flag(self) -> list:
+        """V14.3.0: when this job is running in the parallel CPU slot
+        (``opts["_cpu_slot"] is True``) and using libx264/libx265,
+        return ``["-threads", "N"]`` where N leaves headroom for the
+        OS / GUI / the parallel GPU job. Empty list otherwise."""
+        if not self.opts.get("_cpu_slot"):
+            return []
+        encoder = (self.opts.get("encoder") or "").lower()
+        if encoder not in ("libx264", "libx265"):
+            return []
+        try:
+            from .system_resources import cpu_encoder_thread_count
+        except Exception:
+            return []
+        n = cpu_encoder_thread_count(parallel_gpu_running=True)
+        return ["-threads", str(n)]
+
     def run(self):
         self._t_start = time.monotonic()
         log.info("Job %d START [%s] %s -> %s",
@@ -177,6 +194,9 @@ class JobRunner(QThread):
             encoder,
             self.opts.get("speed_tier", "Balanced"),
             video_bitrate_kbps=self.opts.get("video_bitrate_kbps", 0))
+        # V14.3.0: cap libx264/libx265 thread count when running as the
+        # parallel CPU slot so the GPU job + GUI still have CPU time.
+        cmd += self._cpu_threads_flag()
         cmd += audio_codec_args(self.opts, output_duration_s=out_duration)
         # V12.3: when this profile has an intro and/or outro configured,
         # encode the main video to a temp file first; ``_run_ffmpeg``
@@ -340,6 +360,9 @@ class JobRunner(QThread):
             encoder,
             self.opts.get("speed_tier", "Balanced"),
             video_bitrate_kbps=self.opts.get("video_bitrate_kbps", 0))
+        # V14.3.0: cap libx264/libx265 thread count when running as the
+        # parallel CPU slot so the GPU job + GUI still have CPU time.
+        cmd += self._cpu_threads_flag()
         speed = float(self.opts.get("speed", 1.0) or 1.0)
         out_duration = seg / max(speed, 1e-3)
         cmd += audio_codec_args(self.opts, output_duration_s=out_duration)
@@ -471,6 +494,9 @@ class JobRunner(QThread):
             encoder,
             self.opts.get("speed_tier", "Balanced"),
             video_bitrate_kbps=self.opts.get("video_bitrate_kbps", 0))
+        # V14.3.0: cap libx264/libx265 thread count when running as the
+        # parallel CPU slot so the GPU job + GUI still have CPU time.
+        cmd += self._cpu_threads_flag()
         # Audio length after trim + speed change for accurate fade-out.
         speed = float(self.opts.get("speed", 1.0) or 1.0)
         out_duration = seg / max(speed, 1e-3)
@@ -516,6 +542,25 @@ class JobRunner(QThread):
                     cancel_cleanup_target: str = None,
                     pct_offset: float = 0.0, pct_scale: float = 1.0):
         log.debug("Job %d cmd: %s", self.idx, " ".join(repr(a) for a in cmd))
+        # V14.3.0: CPU-slot jobs run with below-normal process priority
+        # so they yield to the GUI thread and the OS scheduler under
+        # contention. The system_resources helper returns the right
+        # subprocess kwargs per platform — creationflags on Windows,
+        # preexec_fn(os.nice +5) on Unix.
+        extra_popen = {}
+        if self.opts.get("_cpu_slot"):
+            try:
+                from .system_resources import low_priority_popen_kwargs
+                extra_popen.update(low_priority_popen_kwargs())
+            except Exception as exc:
+                log.info("Job %d: low-prio kwargs unavailable: %s",
+                         self.idx, exc)
+        # Merge our existing CREATE_NO_WINDOW with whatever low-prio
+        # added (Windows uses creationflags for both).
+        if "creationflags" in extra_popen:
+            extra_popen["creationflags"] |= CREATE_NO_WINDOW
+        else:
+            extra_popen["creationflags"] = CREATE_NO_WINDOW
         try:
             self._proc = subprocess.Popen(
                 cmd,
@@ -523,7 +568,7 @@ class JobRunner(QThread):
                 stderr=subprocess.PIPE,
                 text=True,
                 bufsize=1,
-                creationflags=CREATE_NO_WINDOW,
+                **extra_popen,
             )
         except OSError as e:
             return False, f"Could not start FFmpeg: {e}"
@@ -695,6 +740,9 @@ class JobRunner(QThread):
             self.opts.get("encoder", "libx264"),
             self.opts.get("speed_tier", "Balanced"),
             video_bitrate_kbps=self.opts.get("video_bitrate_kbps", 0))
+        # V14.3.0: same CPU-slot thread cap applies to the concat
+        # re-encode pass (intro/outro merge) when running on libx264/x265.
+        cmd += self._cpu_threads_flag()
         # V12.3 audit fix (BUG-1): the main encode pass already applied
         # speed (atempo), loudnorm, fade_in / fade_out and audio fade
         # via -af. Re-applying them here would: a) re-compound atempo
@@ -760,13 +808,18 @@ class BatchManager(QObject):
                  ffmpeg: str, ffprobe: str, opts: dict, parent=None):
         super().__init__(parent)
         # Each job: (idx, src, dst, kind, visual_path, visual_kind)
-        self.jobs = jobs
+        self.jobs = list(jobs)
         self.max_concurrent = max(1, min(2, int(max_concurrent or 1)))
         self.ffmpeg = ffmpeg
         self.ffprobe = ffprobe
         self.opts = opts
         self._pending = list(range(len(jobs)))
         self._active = {}      # idx -> JobRunner
+        # V14.3.0: which active jobs are running in the "CPU slot"
+        # (the auxiliary slot opened by ``use_cpu_alongside_gpu``).
+        # Tracked as a set of idx so a live toggle off can refuse to
+        # spawn new ones while letting existing ones finish.
+        self._active_cpu = set()
         self._cancelled = False
         # V12.2: pause/resume support. When ``_paused`` is True, no new
         # JobRunner threads start — but anything already encoding keeps
@@ -775,6 +828,9 @@ class BatchManager(QObject):
         self._paused = False
         self._retry_count = {} # idx -> retries already used
         self._slot_for_idx = {j[0]: s for s, j in enumerate(self.jobs)}
+        # V14.3.0: live toggle. Read from opts so the GUI's checkbox
+        # propagates through. Can be flipped via set_use_cpu_slot().
+        self._use_cpu_slot = bool(opts.get("use_cpu_alongside_gpu", False))
 
     def is_running(self) -> bool:
         return bool(self._active) or bool(self._pending)
@@ -804,19 +860,100 @@ class BatchManager(QObject):
         log.info("Batch RESUME requested (active=%d pending=%d)",
                  len(self._active), len(self._pending))
         self.paused_changed.emit(False)
-        # Top up the active set so concurrency goes back to its target.
-        slots_to_fill = self.max_concurrent - len(self._active)
-        for _ in range(max(0, min(slots_to_fill, len(self._pending)))):
-            self._start_next()
+        # V14.3.0: dispatch loop refills GPU + optional CPU slot to
+        # the effective concurrency target.
+        self._dispatch()
+
+    # ------------------------------------------------------------------ V14.3.0
+
+    HARD_CAP_CONCURRENT = 4
+
+    def effective_concurrency(self) -> int:
+        """Total simultaneous JobRunner threads we're willing to run.
+        With the CPU slot enabled this is ``max_concurrent + 1``, but
+        we hard-cap at :data:`HARD_CAP_CONCURRENT` to keep the system
+        from thrashing regardless of what the user set."""
+        n = self.max_concurrent + (1 if self._use_cpu_slot else 0)
+        return min(self.HARD_CAP_CONCURRENT, n)
+
+    def set_use_cpu_slot(self, enabled: bool):
+        """V14.3.0: live toggle for the auxiliary CPU encoder slot.
+        Safe to call mid-batch from the GUI thread:
+
+        * ON  → at most one extra concurrent job is allowed; the next
+          dispatch tick opens it. The current encoder runs at
+          below-normal priority and the libx264/x265 ``-threads`` arg
+          is capped.
+        * OFF → stop spawning new CPU jobs; in-flight CPU jobs run to
+          completion at their current priority (mid-encode you can't
+          re-nice an ffmpeg process safely across platforms).
+        """
+        enabled = bool(enabled)
+        if enabled == self._use_cpu_slot:
+            return
+        self._use_cpu_slot = enabled
+        self.opts["use_cpu_alongside_gpu"] = enabled
+        log.info("CPU slot toggle: %s (active=%d cpu_active=%d)",
+                 "ON" if enabled else "OFF",
+                 len(self._active), len(self._active_cpu))
+        if enabled and not self._cancelled and not self._paused:
+            # Try to top up immediately.
+            self._dispatch()
+
+    def add_jobs(self, new_jobs: list):
+        """V14.3.0: append more jobs to a running (or paused) batch.
+
+        New jobs go to the end of the pending queue. If the batch is
+        running and there's a free slot, dispatch picks them up
+        immediately. If the batch has already finished, this is a
+        no-op — caller should start a fresh batch.
+        """
+        if self._cancelled or not new_jobs:
+            return
+        was_done = (not self._pending and not self._active)
+        if was_done:
+            log.info("add_jobs() called on a finished batch — no-op")
+            return
+        first_new_slot = len(self.jobs)
+        for j in new_jobs:
+            self.jobs.append(j)
+        for s, j in enumerate(self.jobs[first_new_slot:],
+                              start=first_new_slot):
+            idx = j[0]
+            self._slot_for_idx[idx] = s
+            self._pending.append(s)
+        log.info("add_jobs: +%d (pending=%d)", len(new_jobs),
+                 len(self._pending))
+        if not self._paused:
+            self._dispatch()
+
+    def _dispatch(self):
+        """V14.3.0: refill empty slots up to ``effective_concurrency``.
+        Replaces the inline single-shot ``_start_next`` calls that
+        only knew about one fixed concurrency. ``_start_next`` is
+        still the worker that pulls + starts one job at a time."""
+        if self._cancelled or self._paused:
+            return
+        target = self.effective_concurrency()
+        while (len(self._active) < target
+               and self._pending
+               and not self._cancelled and not self._paused):
+            if not self._start_next():
+                break
+
+    # ------------------------------------------------------------------
 
     def start(self):
         if not self.jobs:
             self.batch_finished.emit()
             return
-        log.info("Batch START: %d job(s), concurrency=%d",
-                 len(self.jobs), self.max_concurrent)
-        for _ in range(min(self.max_concurrent, len(self._pending))):
-            self._start_next()
+        log.info(
+            "Batch START: %d job(s), gpu_concurrency=%d, cpu_slot=%s "
+            "-> effective=%d",
+            len(self.jobs), self.max_concurrent,
+            "on" if self._use_cpu_slot else "off",
+            self.effective_concurrency())
+        self._dispatch()
 
     def cancel(self):
         log.info("Batch CANCEL requested")
@@ -839,11 +976,31 @@ class BatchManager(QObject):
             except Exception:
                 pass
 
-    def _start_next(self):
+    def _start_next(self) -> bool:
+        """V14.3.0: return ``True`` if a job was launched, ``False`` if
+        the dispatcher should stop trying (e.g. RAM watchdog blocked
+        the CPU slot but the GPU slot was already filled). The boolean
+        return lets ``_dispatch`` break the refill loop cleanly."""
         # V12.2: don't start a new job while paused; ``resume()`` will
         # call this method again to refill the active slots.
         if self._cancelled or self._paused or not self._pending:
-            return
+            return False
+        # V14.3.0: decide whether this dispatch fills the GPU slot
+        # (always allowed when there's room) or the auxiliary CPU
+        # slot (only if the toggle is on and the RAM watchdog says
+        # we have headroom).
+        gpu_filled = len(self._active) - len(self._active_cpu)
+        is_cpu_slot = False
+        if gpu_filled >= self.max_concurrent:
+            # The GPU side is full — any further slot is the CPU one.
+            if not self._use_cpu_slot:
+                return False
+            if not self._cpu_slot_safe_to_open():
+                # RAM tight or psutil says don't spawn — wait for the
+                # next dispatch tick.
+                return False
+            is_cpu_slot = True
+
         slot = self._pending.pop(0)
         # Job tuples are 6-tuples by default; an optional 7th element carries
         # a per-job opts override dict (used by the split-on-length feature
@@ -851,6 +1008,25 @@ class BatchManager(QObject):
         job = self.jobs[slot]
         idx, src, dst, kind, visual_path, visual_kind = job[:6]
         per_job_opts = job[6] if len(job) >= 7 else None
+        # V14.3.0: CPU-slot jobs swap the encoder for libx264/libx265
+        # and set the ``_cpu_slot`` flag the JobRunner uses to lower
+        # priority + cap the encoder thread count.
+        if is_cpu_slot:
+            try:
+                from .system_resources import force_cpu_encoder
+            except Exception:
+                force_cpu_encoder = None
+            override = dict(per_job_opts or {})
+            override["_cpu_slot"] = True
+            # Pick libx264/x265 to match the profile's codec family.
+            if force_cpu_encoder is not None:
+                override = {**override, **{
+                    k: v for k, v in force_cpu_encoder(
+                        self.opts, codec_hint=self.opts.get("encoder", "")
+                    ).items() if k in ("encoder", "_cpu_slot")
+                }}
+            per_job_opts = override
+            self._active_cpu.add(idx)
         runner = JobRunner(idx, src, dst, kind, visual_path, visual_kind,
                            self.ffmpeg, self.ffprobe, self.opts,
                            per_job_opts=per_job_opts)
@@ -860,6 +1036,17 @@ class BatchManager(QObject):
         self._active[idx] = runner
         self.file_started.emit(idx, src)
         runner.start()
+        return True
+
+    def _cpu_slot_safe_to_open(self) -> bool:
+        """V14.3.0: RAM watchdog. Returns False when free RAM is below
+        the system_resources threshold so the dispatch loop skips the
+        CPU slot for this tick. Fail-open if psutil isn't installed."""
+        try:
+            from .system_resources import enough_ram_for_cpu_job
+            return enough_ram_for_cpu_job()
+        except Exception:
+            return True
 
     def _on_finished(self, idx, ok, msg):
         # Retry path: any non-cancel failure triggers up to MAX_RETRIES
@@ -873,6 +1060,8 @@ class BatchManager(QObject):
                      idx, attempt, self.MAX_RETRIES + 1, msg[:120])
             self.file_retrying.emit(idx, attempt, msg)
             runner = self._active.pop(idx, None)
+            # V14.3.0: clear CPU-slot ownership when the runner exits.
+            self._active_cpu.discard(idx)
             if runner:
                 try:
                     runner.wait(50)
@@ -882,25 +1071,24 @@ class BatchManager(QObject):
             slot = self._slot_for_idx.get(idx)
             if slot is not None:
                 self._pending.append(slot)
-                self._start_next()
+                self._dispatch()
             return
 
         self.file_finished.emit(idx, ok, msg)
         runner = self._active.pop(idx, None)
+        self._active_cpu.discard(idx)
         if runner:
             try:
                 runner.wait(50)
             except Exception:
                 pass
             runner.deleteLater()
-        # V12.2: ``_start_next`` short-circuits when paused, so we still
-        # call it; on a paused batch this is a cheap no-op that lets the
-        # active set drain to zero without launching new jobs. The batch
-        # is only considered "done" when there's nothing pending AND
-        # nothing active — pausing with pending jobs keeps the manager
-        # alive until resume / cancel.
+        # V14.3.0: ``_dispatch`` handles the cpu+gpu slot bookkeeping;
+        # it short-circuits when paused so this is a cheap no-op then.
+        # The batch is only considered "done" when there's nothing
+        # pending AND nothing active.
         if not self._cancelled and self._pending and not self._paused:
-            self._start_next()
+            self._dispatch()
         elif not self._active and not self._pending:
             log.info("Batch END")
             self.batch_finished.emit()

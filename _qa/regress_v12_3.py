@@ -618,7 +618,7 @@ from app.updater import (
 )
 
 # Version is correctly bumped.
-check("APP_VERSION = '14.2.0'", _APP_VERSION == "14.2.0",
+check("APP_VERSION = '14.3.0'", _APP_VERSION == "14.3.0",
       f"got {_APP_VERSION!r}")
 check("GITHUB_REPO is khurram5509/Veloxa-Video-Editor",
       _u.GITHUB_REPO == "khurram5509/Veloxa-Video-Editor",
@@ -642,7 +642,7 @@ check("'v' prefix tolerated either side",
       _vc("v13.0", "V13.0") == 0)
 
 # is_newer convenience.
-check("is_newer('14.2.0', '13.0')", _newer("14.2.0", "13.0"))
+check("is_newer('14.3.0', '13.0')", _newer("14.3.0", "13.0"))
 check("not is_newer('12.9.99', '13.0')",
       not _newer("12.9.99", "13.0"))
 check("not is_newer('13.0', '13.0')",
@@ -725,16 +725,16 @@ check("docs.py advertises auto-update feature",
 
 # Installer.iss + build.ps1 carry the new version.
 iss_src = open(ROOT / "installer.iss", encoding="utf-8").read()
-check("installer.iss AppVersion = 14.2.0", '"14.2.0"' in iss_src)
-check("installer.iss EXE name = V14.2.0.exe",
-      "Veloxa-Video-Editor-V14.2.0.exe" in iss_src)
+check("installer.iss AppVersion = 14.3.0", '"14.3.0"' in iss_src)
+check("installer.iss EXE name = V14.3.0.exe",
+      "Veloxa-Video-Editor-V14.3.0.exe" in iss_src)
 check("installer.iss preserves stable AppId across V12 -> V13",
       "F2E1A8C4-1E5B-4C9A-9B27-VELOXA-VID-V121" in iss_src)
 ps1_src = open(ROOT / "build.ps1", encoding="utf-8").read()
-check("build.ps1 builds V14.2.0 EXE",
-      "Veloxa-Video-Editor-V14.2.0" in ps1_src)
+check("build.ps1 builds V14.3.0 EXE",
+      "Veloxa-Video-Editor-V14.3.0" in ps1_src)
 
-# V14.2.0 crash-fix: stale C++-object guard in _start_update_check.
+# V14.3.0 crash-fix: stale C++-object guard in _start_update_check.
 mw_src2 = open(ROOT / "app" / "main_window.py", encoding="utf-8").read()
 check("_start_update_check guards RuntimeError on stale wrapper",
       "except RuntimeError" in mw_src2
@@ -744,9 +744,9 @@ check("_on_update_checker_finished clears the Python ref",
 
 
 # ===========================================================================
-# 13. V14.2.0: System / Light / Dark theme switcher
+# 13. V14.3.0: System / Light / Dark theme switcher
 # ===========================================================================
-section("V14.2.0: theme switcher")
+section("V14.3.0: theme switcher")
 
 from app.theme import (
     DARK_QSS, LIGHT_QSS,
@@ -769,7 +769,7 @@ check("DARK_QSS and LIGHT_QSS differ (not a copy/paste)",
 check("dark theme uses brand orange",  "#f58220" in DARK_QSS)
 check("light theme uses brand orange", "#f58220" in LIGHT_QSS)
 
-# V14.2.0: light theme redesign — depth + hierarchy.
+# V14.3.0: light theme redesign — depth + hierarchy.
 check("light theme uses qlineargradient for button/input depth",
       "qlineargradient" in LIGHT_QSS)
 check("light theme uses tinted off-white main bg (cards stand out)",
@@ -854,7 +854,7 @@ for k in AUDIO_TEMPLATE_ORDER:
           and lbl == "[vout]" and "[aout]" in fc,
           f"label={lbl!r}, fc[:60]={fc[:60]!r}")
 
-# V14.2.0: actually run each template's filter graph through FFmpeg
+# V14.3.0: actually run each template's filter graph through FFmpeg
 # (against a silent lavfi audio source) so any "Option not found" /
 # syntax errors fail loudly rather than at the user's encode time.
 import subprocess as _sp
@@ -912,9 +912,9 @@ check("profile_opts passes audio_template through",
 
 
 # ===========================================================================
-# 15. V14.2.0: updater download runs on a QThread (no more GUI freeze)
+# 15. V14.3.0: updater download runs on a QThread (no more GUI freeze)
 # ===========================================================================
-section("V14.2.0: updater download worker")
+section("V14.3.0: updater download worker")
 
 from app.updater import DownloadWorker as _DW
 import inspect as _inspectV14
@@ -933,7 +933,7 @@ check("DownloadWorker passes a cancel callback",
 # download_installer uses 1 MB chunks.
 import app.updater as _upd
 _di_src = _inspectV14.getsource(_upd.download_installer)
-check("download_installer chunk size = 64 KB (V14.2.0 perf fix)",
+check("download_installer chunk size = 64 KB (V14.3.0 perf fix)",
       "chunk_size = 64 * 1024" in _di_src,
       "V14.0.1 incorrectly bumped to 1 MB and tanked throughput")
 
@@ -953,9 +953,9 @@ check("Progress bar uses 0..1000 range for sub-percent granularity",
 
 
 # ===========================================================================
-# 16. V14.2.0: preview overlay clears + installer no longer side-by-side
+# 16. V14.3.0: preview overlay clears + installer no longer side-by-side
 # ===========================================================================
-section("V14.2.0: preview clear + installer overwrite")
+section("V14.3.0: preview clear + installer overwrite")
 
 mw_v142 = open(ROOT / "app" / "main_window.py", encoding="utf-8").read()
 
@@ -993,9 +993,9 @@ check("installer sets VersionInfo* so Setup EXE icon shows",
 
 
 # ===========================================================================
-# 17. V14.2.0: Single instance + HiDPI + responsive hardening
+# 17. V14.3.0: Single instance + HiDPI + responsive hardening
 # ===========================================================================
-section("V14.2.0: single-instance, HiDPI, min size")
+section("V14.3.0: single-instance, HiDPI, min size")
 
 # Single-instance module exists and exposes the public API.
 from app import single_instance as _si
@@ -1036,9 +1036,9 @@ check("MainWindow still calls saveGeometry on close",
 
 
 # ===========================================================================
-# 18. V14.2.0: single-instance ACK handshake + dynamic version log
+# 18. V14.3.0: single-instance ACK handshake + dynamic version log
 # ===========================================================================
-section("V14.2.0: single-instance ACK + dynamic persistence version")
+section("V14.3.0: single-instance ACK + dynamic persistence version")
 
 si_src = inspect.getsource(_si)
 check("single_instance defines ACK_MAGIC",
@@ -1059,9 +1059,9 @@ check("persistence.py reads APP_VERSION dynamically (no V13.0 hardcode)",
 
 
 # ===========================================================================
-# 19. V14.2.0: macOS source-level support + GitHub Actions
+# 19. V14.3.0: macOS source-level support + GitHub Actions
 # ===========================================================================
-section("V14.2.0: cross-platform foundation")
+section("V14.3.0: cross-platform foundation")
 
 from app import platform_compat as _pc
 check("platform_compat exposes IS_WIN / IS_MAC / IS_LINUX",
@@ -1072,8 +1072,8 @@ check("platform_tag returns 'windows' on Windows host",
 
 # Asset picker honours platform: Windows host should still pick .exe.
 mac_assets = [
-    {"name": "Veloxa-Video-Editor-V14.2.0-Setup.exe"},
-    {"name": "Veloxa-Video-Editor-V14.2.0-macOS.dmg"},
+    {"name": "Veloxa-Video-Editor-V14.3.0-Setup.exe"},
+    {"name": "Veloxa-Video-Editor-V14.3.0-macOS.dmg"},
 ]
 picked = _pc.pick_release_asset(mac_assets)
 if _pc.IS_WIN:
@@ -1130,6 +1130,108 @@ check("Workflow builds .app + .dmg + ad-hoc signs",
 check("Workflow uploads .dmg to the matching release",
       "gh release upload" in gha_src
       and ".dmg" in gha_src)
+
+
+# ===========================================================================
+# V14.3.0 — Parallel CPU encoder slot + add-files-while-batch-runs
+# ===========================================================================
+section("V14.3.0 — CPU/GPU parallel slot + safety + queue-add")
+
+# ---- engine/system_resources.py contract --------------------------------
+from engine import system_resources as _sr
+check("system_resources.low_priority_popen_kwargs exists",
+      callable(getattr(_sr, "low_priority_popen_kwargs", None)))
+_kw = _sr.low_priority_popen_kwargs()
+check("low_priority_popen_kwargs returns a dict",
+      isinstance(_kw, dict))
+if sys.platform == "win32":
+    # BELOW_NORMAL_PRIORITY_CLASS = 0x4000.
+    check("Windows low-priority kwargs include BELOW_NORMAL creationflags",
+          _kw.get("creationflags", 0) & 0x4000)
+else:
+    check("Unix low-priority kwargs include preexec_fn",
+          callable(_kw.get("preexec_fn")))
+
+check("system_resources.cpu_encoder_thread_count exists",
+      callable(getattr(_sr, "cpu_encoder_thread_count", None)))
+_n_solo = _sr.cpu_encoder_thread_count(parallel_gpu_running=False)
+_n_para = _sr.cpu_encoder_thread_count(parallel_gpu_running=True)
+check("cpu_encoder_thread_count returns >=1 in both modes",
+      _n_solo >= 1 and _n_para >= 1)
+check("cpu_encoder_thread_count is no larger when GPU runs parallel",
+      _n_para <= _n_solo)
+
+check("system_resources.enough_ram_for_cpu_job exists",
+      callable(getattr(_sr, "enough_ram_for_cpu_job", None)))
+# fail-open semantics: even with no psutil, must return a bool.
+check("enough_ram_for_cpu_job returns a bool",
+      isinstance(_sr.enough_ram_for_cpu_job(), bool))
+
+check("system_resources.force_cpu_encoder exists",
+      callable(getattr(_sr, "force_cpu_encoder", None)))
+_265 = _sr.force_cpu_encoder({"encoder": "hevc_nvenc"})
+_264 = _sr.force_cpu_encoder({"encoder": "h264_nvenc"})
+check("force_cpu_encoder maps hevc family -> libx265",
+      _265.get("encoder") == "libx265" and _265.get("_cpu_slot") is True)
+check("force_cpu_encoder maps h264 family -> libx264",
+      _264.get("encoder") == "libx264" and _264.get("_cpu_slot") is True)
+
+# ---- BatchManager.HARD_CAP_CONCURRENT + helpers -------------------------
+from engine import batch as _bm_mod
+check("BatchManager.HARD_CAP_CONCURRENT == 4",
+      getattr(_bm_mod.BatchManager, "HARD_CAP_CONCURRENT", None) == 4)
+check("BatchManager.set_use_cpu_slot exists",
+      callable(getattr(_bm_mod.BatchManager, "set_use_cpu_slot", None)))
+check("BatchManager.add_jobs exists",
+      callable(getattr(_bm_mod.BatchManager, "add_jobs", None)))
+check("BatchManager.effective_concurrency exists",
+      callable(getattr(_bm_mod.BatchManager, "effective_concurrency", None)))
+check("BatchManager._dispatch exists",
+      callable(getattr(_bm_mod.BatchManager, "_dispatch", None)))
+check("BatchManager._cpu_slot_safe_to_open exists",
+      callable(getattr(_bm_mod.BatchManager, "_cpu_slot_safe_to_open", None)))
+
+# ---- JobRunner CPU-slot threads + low-priority Popen --------------------
+check("JobRunner._cpu_threads_flag exists",
+      callable(getattr(_bm_mod.JobRunner, "_cpu_threads_flag", None)))
+_batch_src = inspect.getsource(_bm_mod)
+check("JobRunner._run_ffmpeg uses low_priority_popen_kwargs on _cpu_slot",
+      "low_priority_popen_kwargs" in _batch_src and "_cpu_slot" in _batch_src)
+check("BatchManager._start_next branches on _cpu_slot",
+      "force_cpu_encoder" in _batch_src)
+
+# ---- UI wiring -----------------------------------------------------------
+mw_v143 = open(ROOT / "app" / "main_window.py", encoding="utf-8").read()
+check("Settings checkbox use_cpu_alongside_gpu exists",
+      "use_cpu_alongside_gpu" in mw_v143
+      and "Also use CPU encoder when GPU is busy" in mw_v143)
+check("Checkbox toggled signal wired to handler",
+      "_on_use_cpu_alongside_gpu_toggled" in mw_v143)
+check("Handler propagates to BatchManager.set_use_cpu_slot",
+      "set_use_cpu_slot" in mw_v143)
+check("_collect_opts persists use_cpu_alongside_gpu",
+      '"use_cpu_alongside_gpu":' in mw_v143
+      or "'use_cpu_alongside_gpu':" in mw_v143)
+check("closeEvent saves use_cpu_alongside_gpu via QSettings",
+      'setValue("use_cpu_alongside_gpu"' in mw_v143
+      or "setValue('use_cpu_alongside_gpu'" in mw_v143)
+check("_load_settings restores use_cpu_alongside_gpu",
+      'value("use_cpu_alongside_gpu"' in mw_v143
+      or "value('use_cpu_alongside_gpu'" in mw_v143)
+
+# Add-files-while-batch-runs: Add button stays enabled when locked.
+check("_set_queue_locked leaves add_btn enabled",
+      "add_btn.setEnabled(True)" in mw_v143)
+check("_add_files dispatches mid-batch via BatchManager.add_jobs",
+      "_build_jobs_for_items" in mw_v143
+      and ".add_jobs(" in mw_v143)
+check("_build_jobs_for_items helper defined",
+      "def _build_jobs_for_items" in mw_v143)
+
+# requirements.txt picked up psutil (used by RAM watchdog).
+_req = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+check("requirements.txt includes psutil>=5.9",
+      "psutil" in _req)
 
 
 # ===========================================================================
