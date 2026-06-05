@@ -1,3 +1,38 @@
+# Veloxa Video Editor — V14.3.5
+
+**Feature.** Audio files added to the queue can now be auto-assigned visuals from the Audio Visuals tab — one-by-one in round-robin order — so the user doesn't have to right-click each row to set its visual.
+
+## How it works
+
+When you tick **Audio Visuals → "Use these visuals for audio inputs (round-robin)"** and have at least one visual in the Profile Visuals list, every audio file added to the queue (drag-drop OR the Add Files button) is assigned the next visual in the list. The per-profile rotation counter persists across batches and sessions exactly like the existing batch-start rotation — adding 3 audio files followed by another 2 picks visuals 1, 2, 3, then 4, 5 (wrapping when the list runs out).
+
+If an Audio Visuals template (Spectrum Bars, Waveform, Neon Audio Ring, etc.) is selected, the auto-assign is a no-op — the template synthesises its own visual from the audio, no list assignment needed.
+
+## Decision matrix
+
+| Audio template | "Use these visuals" | What happens on add |
+|---|---|---|
+| Selected (e.g. Spectrum Bars) | either | Template synthesises visual, no per-row visual assigned, no modal prompt. |
+| None | OFF | Legacy modal prompt — pick one shared visual for all newly-added audio files. |
+| None | ON, list empty | Legacy modal prompt (rotation can't fire without entries). |
+| None | ON, list non-empty | **Auto-assign** rotates through the list; no modal. |
+
+## Implementation
+
+- New `MainWindow._has_audio_template_active()` and `MainWindow._auto_assign_audio_visuals_for_new(audio_paths, profile)` in `app/main_window.py`.
+- `_add_files` consults the auto-assign first; if it returned any entries OR a template is active, the legacy "pick one visual for all audio files" modal is skipped.
+- `_build_jobs` now skips the batch-start rotation when the row already has a `visual_path` set — so the auto-assign counter advance at add-time isn't double-applied at batch-start.
+- Only newly-added files are touched. Existing pending audio rows with no visual stay untouched (no surprise mutation).
+- Rotation counter (`_pv_get_counter` / `_pv_set_counter`) is shared with the legacy batch-start path so both code paths advance the same per-profile sequence in QSettings, persisted on every change.
+
+## Tests
+
+- New `_qa/v143_auto_assign_visuals.py` — 24 probes covering: template-active no-op, checkbox-OFF no-op, empty-list no-op, no-audio no-op, happy-path 4-file rotation with wrap-around, counter persistence across calls, missing-file filtering, `_build_jobs` doesn't double-advance, `_has_audio_template_active` reflects combo state, and `_add_files` wiring.
+- 10 new probes in the main regression suite covering the same source-level invariants.
+- **312 / 312** regression probes + **33 / 33** dispatch + **26 / 26** platform routing + **24 / 24** auto-assign + **15 / 15** audio-template preview + **99 / 99** e2e encode = **509 / 509 PASS**.
+
+---
+
 # Veloxa Video Editor — V14.3.4
 
 **Hot-fix.** Hardened the platform-asset selector and added an

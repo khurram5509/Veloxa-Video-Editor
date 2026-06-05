@@ -2189,6 +2189,98 @@ class MainWindow(QMainWindow):
             return "video"
         return None
 
+    def _has_audio_template_active(self) -> bool:
+        """V14.3.5: True iff the Audio Visuals tab has a non-'none'
+        template selected. When True the template synthesises the
+        per-row visual from the audio itself, so no user-supplied
+        ``visual_path`` is needed."""
+        if not hasattr(self, "audio_template_combo"):
+            return False
+        try:
+            key = self.audio_template_combo.currentData() or "none"
+        except Exception:
+            return False
+        return bool(key) and key != "none"
+
+    def _auto_assign_audio_visuals_for_new(
+            self, audio_paths: list, active_profile: str) -> dict:
+        """V14.3.5: when the user has the Audio Visuals tab's
+        rotation checkbox ON and a non-empty list of visuals, round-
+        robin assign one visual to each newly-added audio file at
+        add-to-queue time. Mirrors the per-profile counter the existing
+        batch-start rotation uses so the rotation continues seamlessly
+        across both code paths.
+
+        Returns a dict ``{audio_path: (visual_path, visual_kind,
+        visual_duration)}`` covering ONLY the files we auto-assigned.
+        Returns an empty dict (no-op) when:
+          * No audio files were added.
+          * An audio template is active (template synthesises visual).
+          * The Profile Visuals rotation checkbox is OFF.
+          * The Profile Visuals list is empty / has no usable entries.
+
+        Persists the advanced counter via ``_pv_set_counter`` so the
+        legacy batch-start rotation (in ``_build_jobs``) picks up
+        where this method left off rather than double-advancing.
+        """
+        out: dict = {}
+        if not audio_paths:
+            return out
+        # Template wins — no per-row visual needed.
+        if self._has_audio_template_active():
+            return out
+        # Rotation checkbox is the user's opt-in switch.
+        if not hasattr(self, "profile_visuals_enabled"):
+            return out
+        if not self.profile_visuals_enabled.isChecked():
+            return out
+        # Gather the list of usable visuals (path must exist on disk).
+        if not hasattr(self, "profile_visuals_list"):
+            return out
+        pv_list = []
+        for i in range(self.profile_visuals_list.count()):
+            it = self.profile_visuals_list.item(i)
+            d = it.data(Qt.ItemDataRole.UserRole) or {}
+            p = (d.get("path") or "").strip()
+            if not p or not os.path.exists(p):
+                continue
+            kind = (d.get("kind") or "image").lower()
+            pv_list.append({"path": p, "kind": kind})
+        if not pv_list:
+            return out
+        # Pick from the rotation, advancing the counter as we go. The
+        # batch-start path consults the same counter; bumping it here
+        # means each newly-added file gets a distinct visual AND the
+        # next batch picks up where this add-call left off.
+        counter = self._pv_get_counter(active_profile)
+        for p in audio_paths:
+            pick = pv_list[counter % len(pv_list)]
+            vp = pick["path"]
+            vk = pick["kind"]
+            # Resolve duration for video visuals so the encode-time
+            # loop-fill math has it ready (mirrors prompt path).
+            vd = 0.0
+            if vk == "video" and self.ffprobe:
+                try:
+                    vd = cached_probe_duration(self.ffprobe, vp) or 0.0
+                except Exception:
+                    vd = 0.0
+            out[p] = (vp, vk, vd)
+            counter += 1
+        # Persist the advanced counter so the legacy rotation in
+        # _build_jobs picks up from here.
+        self._pv_set_counter(active_profile, counter)
+        # Surface in the status label so the user sees the rotation
+        # advanced (the existing pv_status_lbl reads from QSettings).
+        try:
+            self._pv_refresh_status()
+        except Exception:
+            pass
+        log.info("Auto-assigned visuals to %d new audio file(s) "
+                 "from profile '%s' (counter now %d)",
+                 len(out), active_profile, counter)
+        return out
+
     def _prompt_visual_for_audio(self, count: int = 1):
         """Two-button chooser then a focused file picker."""
         msg = QMessageBox(self)
@@ -2246,25 +2338,53 @@ class MainWindow(QMainWindow):
             return
 
         audio_paths = [p for p in new_paths if self._kind_for_path(p) == "audio"]
-        visual_for_audio = visual_kind_for_audio = None
-        visual_duration_for_audio = 0.0
-        if audio_paths:
-            visual_for_audio, visual_kind_for_audio, visual_duration_for_audio = (
-                self._prompt_visual_for_audio(len(audio_paths)))
 
         # V11.5: auto-assign the active header profile to every row that
         # comes in. The user can change it per-row later (right-click or
         # the per-row picker).
         active_profile = self.profile_combo.currentText() or NO_PROFILE
+
+        # V14.3.5: auto-assign visuals from the Audio Visuals tab when
+        # the user has the rotation enabled. Returns a dict keyed by
+        # audio path so we can look up the per-row visual below. When
+        # the dict is non-empty we SKIP the legacy single-prompt path
+        # entirely (the user opted in to rotation, they don't want a
+        # modal for every batch). When it returns empty — no template,
+        # no enabled rotation, or no usable visuals — fall through to
+        # the historical prompt so the existing UX is preserved.
+        per_audio_visual = self._auto_assign_audio_visuals_for_new(
+            audio_paths, active_profile)
+
+        # Path A: nothing to auto-assign and we still have audio rows →
+        # prompt the user once for a shared visual (legacy behaviour).
+        # Path B: per_audio_visual has entries OR an audio template is
+        # active (synthesised visual, no path needed) → skip the prompt.
+        visual_for_audio = visual_kind_for_audio = None
+        visual_duration_for_audio = 0.0
+        if audio_paths and not per_audio_visual and not self._has_audio_template_active():
+            visual_for_audio, visual_kind_for_audio, visual_duration_for_audio = (
+                self._prompt_visual_for_audio(len(audio_paths)))
+
         for p in new_paths:
             kind = self._kind_for_path(p)
             if kind == "audio":
-                data = QueueItemData(
-                    src=p, kind=kind,
-                    visual_path=visual_for_audio,
-                    visual_kind=visual_kind_for_audio,
-                    visual_duration=visual_duration_for_audio,
-                    profile_name=active_profile)
+                # V14.3.5: prefer the auto-assigned visual when the
+                # rotation fired; otherwise fall back to the shared
+                # prompted visual.
+                if p in per_audio_visual:
+                    vp, vk, vd = per_audio_visual[p]
+                    data = QueueItemData(
+                        src=p, kind=kind,
+                        visual_path=vp, visual_kind=vk,
+                        visual_duration=vd,
+                        profile_name=active_profile)
+                else:
+                    data = QueueItemData(
+                        src=p, kind=kind,
+                        visual_path=visual_for_audio,
+                        visual_kind=visual_kind_for_audio,
+                        visual_duration=visual_duration_for_audio,
+                        profile_name=active_profile)
             else:
                 data = QueueItemData(src=p, kind=kind,
                                      profile_name=active_profile)
@@ -4018,7 +4138,15 @@ class MainWindow(QMainWindow):
             # Pick visual from rotation when applicable.
             visual_path = d.visual_path
             visual_kind = d.visual_kind
-            if d.kind == "audio" and pv_enabled and pv_list:
+            # V14.3.5: only rotate when the row has NO visual yet.
+            # ``_auto_assign_audio_visuals_for_new`` may have already
+            # filled in visual_path at add-time and advanced the counter
+            # — running rotation again here would double-advance and
+            # silently overwrite the user's just-assigned visual.
+            already_has_visual = bool(
+                visual_path and os.path.exists(visual_path))
+            if (d.kind == "audio" and pv_enabled and pv_list
+                    and not already_has_visual):
                 idx_pick = rotation_local[rot_key]
                 pick = pv_list[idx_pick % len(pv_list)]
                 visual_path = pick.get("path")
