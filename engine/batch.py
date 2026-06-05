@@ -212,7 +212,7 @@ class JobRunner(QThread):
         if apply_intro or apply_outro:
             main_tmp = self.dst + ".main.mp4"
             cmd += ["-movflags", "+faststart",
-                    "-progress", "pipe:1", "-nostats",
+                    "-progress", "pipe:1", "-stats_period", "0.1", "-nostats",
                     main_tmp]
             # V12.3 audit fix (EDGE-2): split progress 0-50 main / 50-100
             # concat so the bar doesn't snap to 0% during the concat pass.
@@ -235,7 +235,7 @@ class JobRunner(QThread):
                                             intro if apply_intro else "",
                                             outro if apply_outro else "")
         cmd += ["-movflags", "+faststart",
-                "-progress", "pipe:1", "-nostats",
+                "-progress", "pipe:1", "-stats_period", "0.1", "-nostats",
                 self.dst]
         return self._run_ffmpeg(cmd, seg)
 
@@ -378,7 +378,7 @@ class JobRunner(QThread):
         if apply_intro or apply_outro:
             main_tmp = self.dst + ".main.mp4"
             cmd += ["-movflags", "+faststart",
-                    "-progress", "pipe:1", "-nostats", main_tmp]
+                    "-progress", "pipe:1", "-stats_period", "0.1", "-nostats", main_tmp]
             ok, msg = self._run_ffmpeg(cmd, seg,
                                         cancel_cleanup_target=main_tmp,
                                         pct_offset=0.0, pct_scale=0.5)
@@ -393,7 +393,7 @@ class JobRunner(QThread):
                                             intro if apply_intro else "",
                                             outro if apply_outro else "")
         cmd += ["-movflags", "+faststart",
-                "-progress", "pipe:1", "-nostats", self.dst]
+                "-progress", "pipe:1", "-stats_period", "0.1", "-nostats", self.dst]
         return self._run_ffmpeg(cmd, seg)
 
     # ---- audio + image/video visual -> video ------------------
@@ -513,7 +513,7 @@ class JobRunner(QThread):
         if apply_intro or apply_outro:
             main_tmp = self.dst + ".main.mp4"
             cmd += ["-movflags", "+faststart", "-shortest",
-                    "-progress", "pipe:1", "-nostats", main_tmp]
+                    "-progress", "pipe:1", "-stats_period", "0.1", "-nostats", main_tmp]
             # V12.3 audit fix (EDGE-2): 0-50 main / 50-100 concat split.
             ok, msg = self._run_ffmpeg(cmd, seg,
                                         cancel_cleanup_target=main_tmp,
@@ -532,7 +532,7 @@ class JobRunner(QThread):
                                             outro if apply_outro else "")
         cmd += ["-movflags", "+faststart",
                 "-shortest",
-                "-progress", "pipe:1", "-nostats",
+                "-progress", "pipe:1", "-stats_period", "0.1", "-nostats",
                 self.dst]
         return self._run_ffmpeg(cmd, seg)
 
@@ -562,23 +562,35 @@ class JobRunner(QThread):
         else:
             extra_popen["creationflags"] = CREATE_NO_WINDOW
         try:
+            # V14.3.1 fix: bufsize=0 + binary mode bypasses Python's
+            # text-mode io.TextIOWrapper buffer. With ``text=True,
+            # bufsize=1`` (the previous setting), ffmpeg's progress
+            # lines sat in Python's ~8 KB internal read-ahead buffer
+            # until the buffer filled (~20 s of encoding) or ffmpeg
+            # exited. Short encodes finished before the buffer filled,
+            # so the user saw the per-row progress bar jump straight
+            # from 0 % to 100 % at the end. Reading raw bytes via
+            # ``readline()`` flushes per line.
             self._proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
+                bufsize=0,
                 **extra_popen,
             )
         except OSError as e:
             return False, f"Could not start FFmpeg: {e}"
 
         last_pct = 0.0
-        for line in self._proc.stdout:
+        # V14.3.1: read bytes line-by-line. ``iter(readline, b'')``
+        # stops on EOF; on each iteration we get one ffmpeg progress
+        # line as soon as ffmpeg flushes it (which it does per
+        # ``-progress`` block).
+        for raw in iter(self._proc.stdout.readline, b""):
             if self._cancel:
                 self._proc.terminate()
                 break
-            line = line.strip()
+            line = raw.decode("utf-8", errors="replace").strip()
             if line.startswith("out_time_us="):
                 try:
                     us = int(line.split("=", 1)[1])
@@ -601,7 +613,14 @@ class JobRunner(QThread):
         ret = self._proc.wait()
         err_text = ""
         try:
-            err_text = self._proc.stderr.read() or ""
+            # V14.3.1: stderr is now a bytes stream (we switched to
+            # binary Popen so stdout could flush per line). Decode for
+            # the error-message path below.
+            raw_err = self._proc.stderr.read() or b""
+            if isinstance(raw_err, bytes):
+                err_text = raw_err.decode("utf-8", errors="replace")
+            else:
+                err_text = raw_err
         except Exception:
             pass
         self._proc = None
@@ -758,7 +777,7 @@ class JobRunner(QThread):
         }
         cmd += audio_codec_args(concat_audio_opts, output_duration_s=0.0)
         cmd += ["-movflags", "+faststart",
-                "-progress", "pipe:1", "-nostats",
+                "-progress", "pipe:1", "-stats_period", "0.1", "-nostats",
                 dst]
         # Rough progress denominator: main duration + intro/outro
         # durations (probed). Used only for the progress bar — accuracy

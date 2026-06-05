@@ -1,3 +1,28 @@
+# Veloxa Video Editor — V14.3.1
+
+**Hot-fix.** Per-row progress bar no longer stays at 0 % during short encodes.
+
+## Fixed
+
+Users reported that the first (and any short) encoding video would sit at 0 % the entire time, then jump straight to 100 % when the file finished. Reproduced and traced to two compounding issues:
+
+1. **FFmpeg's progress emission was too coarse.** Without an explicit `-stats_period`, FFmpeg emits a progress block every 0.5 s of wall time. A 1-second transcode therefore only produces 2 blocks — the first after ~78 % of the encode had completed. The progress bar visibly stayed at 0 % until the very end.
+
+2. **Python's text-mode pipe was buffering progress lines.** `subprocess.Popen(stdout=PIPE, text=True, bufsize=1)` wraps the pipe in an `io.TextIOWrapper`, and on Windows the underlying buffered reader holds ~8 KB of stdout before yielding the first line. For short encodes the buffer never filled mid-encode; lines only arrived when the pipe closed at process exit.
+
+### Fix
+
+`engine/batch.py::JobRunner._run_ffmpeg`:
+
+- Inject `-stats_period 0.1` into every FFmpeg command alongside `-progress pipe:1`, so FFmpeg emits a fresh `out_time_us=` line every 100 ms.
+- Switch `subprocess.Popen` to `bufsize=0` (no Python-side buffer) and read raw bytes via `iter(stdout.readline, b"")`, decoding per line. The reader returns the moment FFmpeg flushes its progress block.
+
+### Result
+
+Same 1-second transcode that previously emitted 3 progress events (first at 78 %) now emits 8 events evenly distributed from 24 % → 100 %. A 7-second transcode emits 56 events. The per-row bar visibly moves throughout the encode on both short and long files, on Windows and macOS.
+
+---
+
 # Veloxa Video Editor — V14.3.0
 
 **Minor release.** Optional parallel CPU encoder slot + add-files-while-batch-runs.
