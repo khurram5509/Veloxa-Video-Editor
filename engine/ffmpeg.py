@@ -195,6 +195,65 @@ def generate_preview(ffmpeg: str, video_path: str, opts: dict,
     return r.returncode == 0 and os.path.exists(out_path)
 
 
+def generate_audio_template_preview(ffmpeg: str, audio_path: str,
+                                    template_key: str, opts: dict,
+                                    out_path: str,
+                                    time_s: float = 0.0) -> bool:
+    """V14.3.2: render one preview frame for an audio row that uses an
+    audio-visual template (waveform, spectrum bars, neon ring, etc.).
+
+    The template synthesises every pixel from the audio stream — there
+    is no user-supplied background. Mirrors the ``-filter_complex`` the
+    real encode path builds via ``_encode_audio_with_template`` so the
+    preview frame matches the encode output one-for-one.
+
+    Returns True on success, False if ffmpeg failed or refused the
+    template (e.g. malformed audio, missing template).
+    """
+    from .audio_templates import get_template
+    tpl = get_template(template_key)
+    if tpl is None:
+        return False
+
+    target_w = int(opts.get("out_w") or 1920)
+    target_h = int(opts.get("out_h") or 1080)
+    if target_w <= 0 or target_h <= 0:
+        target_w, target_h = 1920, 1080
+
+    # Audio templates are spectrum/waveform driven. Their filters
+    # ``showspectrum``, ``showcqt``, ``showwaves`` produce a stream
+    # whose first frame is mostly blank — the spectrum / waveform
+    # buffer hasn't filled yet. To render a representative preview we
+    # feed ~3 s of audio and overwrite the same output file once per
+    # frame via ``-update 1``; the last frame written wins and shows
+    # the fully-developed visual.
+    pre_roll = 0.5
+    feed_dur = 5.0  # most spectrum templates scroll across in ~5 s
+    seek = max(0.0, time_s - pre_roll)
+
+    cmd = [ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
+           "-ss", f"{seek:.3f}", "-t", f"{feed_dur:.3f}",
+           "-i", audio_path]
+    fc, vout_label = tpl.build_filter("0:a", target_w, target_h, opts)
+    # Templates emit both [vout] and [aout]; the preview only wants
+    # video. ffmpeg refuses unmapped filter-graph outputs ("output
+    # unconnected"), so append an ``anullsink`` to absorb [aout].
+    fc_preview = fc + ";[aout]anullsink"
+    cmd += ["-filter_complex", fc_preview, "-map", vout_label,
+            # ``-update 1`` rewrites the same JPG every frame so when
+            # the filter chain finishes, ``out_path`` holds the last
+            # (fully-developed) frame. ``-vsync vfr`` keeps PTS sane.
+            "-update", "1", "-vsync", "vfr",
+            "-frames:v", "150",  # 5 s @ 30 fps
+            "-q:v", "3", out_path]
+    try:
+        r = subprocess.run(cmd, capture_output=True,
+                           creationflags=CREATE_NO_WINDOW, timeout=30)
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    return r.returncode == 0 and os.path.exists(out_path)
+
+
 def generate_visual_preview(ffmpeg: str, visual_path: str, visual_kind: str,
                             visual_duration: float, opts: dict,
                             out_path: str, time_s: float = 0.0) -> bool:

@@ -1,3 +1,29 @@
+# Veloxa Video Editor — V14.3.2
+
+**Hot-fix.** Audio Visuals templates now render in the preview pane.
+
+## Fixed
+
+Selecting an Audio Visuals template (Spectrum Bars, Waveform, Neon Audio Ring, Spotify Canvas Style, etc.) with an audio file in the queue would leave the preview pane stuck on a "Right-click ... Change Visual" message. The actual encode worked — the template ran at batch time — but the user couldn't see what the result would look like before pressing Start.
+
+### Root cause
+
+Two compounding issues:
+
+1. **`_refresh_preview` bailed early on any audio row that had no user-supplied `visual_path`.** It didn't know the user had picked an audio template, which generates the visual from the audio itself. The placeholder message hid the real preview.
+2. **No preview generator existed for audio templates.** `engine.generate_visual_preview` only handled image/video visuals. Even if the GUI had reached the preview step, the worker had no way to render a template frame.
+
+### Fix
+
+- **New `engine.generate_audio_template_preview(ffmpeg, audio_path, template_key, opts, out_path, time_s)`** in `engine/ffmpeg.py`. Builds the template's filter graph against the actual audio source, appends `[aout]anullsink` to absorb the audio tail (ffmpeg refuses unmapped filter outputs), feeds 5 s of audio, and writes the last frame to disk via `-update 1 -frames:v 150` so the spectrum / waveform / CQT buffers have time to fully develop before the frame is captured.
+- **`PreviewWorker.run`** now branches on `opts["audio_template"]`: if a template is selected, route to the new generator. Falls back to `generate_visual_preview` for traditional image/video visuals.
+- **`_refresh_preview`** no longer bails when only a template is set. The placeholder message now reads "Pick an Audio Visuals template, or right-click the queue item -> Change Visual."
+- **Audio Visuals combo** is wired to `_schedule_preview` so switching between Waveform, Spectrum Bars, Neon Ring, etc. live-refreshes the pane within 200 ms.
+
+15 new probes (`_qa/v143_audio_template_preview.py`) verify every registered template (`spectrum_bars`, `circular_spectrum`, `waveform`, `neon_ring`, `podcast_layout`, `spotify_canvas`) produces a valid JPEG. Negative cases (unknown key, empty key, `none` sentinel) all return False without crashing.
+
+---
+
 # Veloxa Video Editor — V14.3.1
 
 **Hot-fix.** Per-row progress bar no longer stays at 0 % during short encodes.

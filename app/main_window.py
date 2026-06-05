@@ -26,6 +26,7 @@ from engine import (
     BatchManager, find_ffmpeg,
     cached_probe_duration, cached_probe_resolution,
     generate_preview, generate_visual_preview,
+    generate_audio_template_preview,
     detect_available_encoders, ENCODER_LABELS, ENCODER_FOR_CODEC,
     AUTO_PRIORITY_H264, AUTO_PRIORITY_HEVC, SPEED_TIERS,
     CODEC_H264, CODEC_HEVC, CPU_ENCODERS,
@@ -78,10 +79,21 @@ class PreviewWorker(QThread):
     def run(self):
         try:
             if self.kind == "audio":
-                ok = generate_visual_preview(
-                    self.ffmpeg, self.visual_path, self.visual_kind,
-                    self.visual_duration, self.opts, self.out_path,
-                    time_s=self.time_s)
+                # V14.3.2: when an audio-visual template is selected,
+                # the visual is synthesised from the audio itself —
+                # no user-supplied visual is involved. Route to the
+                # template-aware preview generator so the pane shows
+                # what the encode will actually produce.
+                template_key = (self.opts.get("audio_template") or "").strip()
+                if template_key and template_key != "none":
+                    ok = generate_audio_template_preview(
+                        self.ffmpeg, self.src, template_key, self.opts,
+                        self.out_path, time_s=self.time_s)
+                else:
+                    ok = generate_visual_preview(
+                        self.ffmpeg, self.visual_path, self.visual_kind,
+                        self.visual_duration, self.opts, self.out_path,
+                        time_s=self.time_s)
             else:
                 ok = generate_preview(
                     self.ffmpeg, self.src, self.opts, self.out_path,
@@ -845,6 +857,13 @@ class MainWindow(QMainWindow):
         tpl_row.addWidget(tpl_lbl)
         tpl_row.addWidget(self.audio_template_combo, 1)
         outer.addLayout(tpl_row)
+        # V14.3.2: changing the template needs to refresh the preview
+        # pane so the user can see what each template looks like before
+        # starting the batch. ``_schedule_preview`` debounces by 200 ms
+        # so rapid combo-box arrow-key scrolling doesn't spawn one
+        # ffmpeg per row.
+        self.audio_template_combo.currentIndexChanged.connect(
+            self._schedule_preview)
 
         self.profile_visuals_enabled = QCheckBox(
             "Use these visuals for audio inputs (round-robin)")
@@ -3419,13 +3438,23 @@ class MainWindow(QMainWindow):
                     pass
             return
 
-        # For audio rows, bail early if no visual is set.
-        if d.kind == "audio" and (
-                not d.visual_path or not os.path.exists(d.visual_path)
-                or d.visual_kind is None):
-            self.preview_label.setText(
-                "Right-click the queue item -> Change Visual")
-            return
+        # For audio rows, bail early if no visual AND no audio template
+        # is set. V14.3.2 fix: audio templates (waveform, spectrum,
+        # neon ring, etc.) synthesise the visual from the audio itself
+        # so they don't need a user-supplied ``visual_path``. Without
+        # this branch the pane stayed on the "Right-click ... Change
+        # Visual" placeholder even when the user had picked a template.
+        if d.kind == "audio":
+            _live_tpl = (self.audio_template_combo.currentData()
+                         if hasattr(self, "audio_template_combo") else "none")
+            _has_template = bool(_live_tpl) and _live_tpl != "none"
+            _has_visual = (d.visual_path and os.path.exists(d.visual_path)
+                           and d.visual_kind is not None)
+            if not _has_template and not _has_visual:
+                self.preview_label.setText(
+                    "Pick an Audio Visuals template, or right-click the "
+                    "queue item -> Change Visual.")
+                return
 
         self._preview_seq = (self._preview_seq + 1) % 4
         out_path = str(Path(tempfile.gettempdir())

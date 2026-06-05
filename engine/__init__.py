@@ -16,6 +16,7 @@ from .ffmpeg import (
     clear_probe_cache,
     generate_preview,
     generate_visual_preview,
+    generate_audio_template_preview,
 )
 from .encoders import (
     CPU_ENCODERS,
@@ -60,6 +61,7 @@ __all__ = [
     "find_ffmpeg", "probe_duration", "probe_resolution", "probe_has_audio",
     "cached_probe_duration", "cached_probe_resolution", "clear_probe_cache",
     "generate_preview", "generate_visual_preview",
+    "generate_audio_template_preview",
     # Encoders
     "CPU_ENCODERS", "GPU_H264", "GPU_HEVC",
     "AUTO_PRIORITY_H264", "AUTO_PRIORITY_HEVC", "SPEED_TIERS",
