@@ -143,6 +143,19 @@ QListWidget::item:selected:hover { background: #7a4520; color: #ffffff; }
 QListWidget::item:selected:!active { background: #4a3010; color: #ffffff; }
 QListWidget:focus                { border: 1px solid #f58220; }
 
+/* V14.3.6: queue-row-label colour is now driven from the QSS so it
+   tracks the active theme. The label has a ``selected`` dynamic
+   property updated by main_window._apply_row_selection_styles. */
+QLabel[role="queue-row-label"] {
+    color: #e6e6e6;
+    background: transparent;
+}
+QLabel[role="queue-row-label"][selected="true"] {
+    color: #ffffff;
+    background: transparent;
+    font-weight: 600;
+}
+
 /* ---- slider ---- */
 QSlider::groove:horizontal {
     background: #1d2026;
@@ -483,6 +496,21 @@ QListWidget::item:selected       { background: #ffe1c2; color: #1c2128; }
 QListWidget::item:selected:hover { background: #ffd4a8; color: #1c2128; }
 QListWidget::item:selected:!active { background: #fff0dc; color: #1c2128; }
 QListWidget:focus                { border: 2px solid #f58220; padding: 3px; }
+
+/* V14.3.6 fix: the per-row widget's filename label was hard-coded to
+   light grey / white in main_window._apply_row_selection_styles, which
+   was invisible on the light-theme white / cream row backgrounds. The
+   label now carries a ``selected`` dynamic property and the colour is
+   driven from here so it respects the active theme. */
+QLabel[role="queue-row-label"] {
+    color: #1c2128;
+    background: transparent;
+}
+QLabel[role="queue-row-label"][selected="true"] {
+    color: #1c2128;
+    background: transparent;
+    font-weight: 600;
+}
 
 /* ---- slider ---- */
 QSlider::groove:horizontal {

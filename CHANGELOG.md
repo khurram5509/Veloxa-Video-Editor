@@ -1,3 +1,42 @@
+# Veloxa Video Editor — V14.3.6
+
+**Hot-fix.** Light theme: queue-row filename text is readable again.
+
+## What was broken
+
+In the V14.3.5 light theme, the queue list rendered like this:
+
+> [V] BIA_Dual_Standard_Masterclass.mp4  DONE
+
+…with the filename text drawn in **`#e6e6e6`** (almost-white) on the light/cream row backgrounds. The labels were effectively invisible. Selected rows had **`#ffffff`** (pure white) text on the **`#ffe1c2`** light-orange selection band — same problem.
+
+## Root cause
+
+`main_window._apply_row_selection_styles` was hard-coding the inline label colour to `#ffffff` / `#e6e6e6` — values that work on the dark theme's dark row backgrounds but become invisible-on-cream in the light theme. The colour didn't react to the active theme at all.
+
+## Fix
+
+Two changes:
+
+1. Both `DARK_QSS` and `LIGHT_QSS` (in `app/theme.py`) now carry an explicit `QLabel[role="queue-row-label"]` rule with theme-appropriate text colours and a `[selected="true"]` variant.
+2. `main_window._apply_row_selection_styles` drops the inline stylesheet and instead toggles a `selected` dynamic property on the label. The QSS picks up the change after a re-polish, so the label colour now tracks the active theme:
+
+| Theme | Unselected row text | Selected row text |
+|---|---|---|
+| Light | `#1c2128` (dark on white) | `#1c2128` bold (dark on light orange) |
+| Dark / OLED | `#e6e6e6` (light grey on dark) | `#ffffff` bold (white on dark orange) |
+
+## Tests
+
+321 / 321 main regression probes (6 new V14.3.6 probes covering: rule presence in both QSS files, correct colour values per theme, presence of the `[selected="true"]` variant, removal of the hard-coded inline colours, and that the apply-styles helper re-polishes after the property change).
+
+## Downloads
+
+- **Windows:** `Veloxa-Video-Editor-V14.3.6-Setup.exe`
+- **macOS:** `Veloxa-Video-Editor-V14.3.6-macOS.dmg` (ad-hoc signed)
+
+---
+
 # Veloxa Video Editor — V14.3.5
 
 **Feature.** Audio files added to the queue can now be auto-assigned visuals from the Audio Visuals tab — one-by-one in round-robin order — so the user doesn't have to right-click each row to set its visual.

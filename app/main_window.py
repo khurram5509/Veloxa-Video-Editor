@@ -2628,12 +2628,13 @@ class MainWindow(QMainWindow):
             pb.style().polish(pb)
 
     def _apply_row_selection_styles(self):
-        """UI-fix: when the queue selection changes, every row's wrap
-        widget gets a ``selected`` dynamic property set to True/False.
-        The stylesheet rules below it pick the white text colour for
-        selected rows and the muted default for the rest, so the inner
-        QLabel matches the orange selection band the QListWidgetItem
-        already paints.
+        """V14.3.6: drive the per-row label colour from the active QSS
+        (was a hard-coded ``#e6e6e6`` / ``#ffffff`` inline stylesheet
+        that worked on the dark theme but rendered as invisible-on-
+        white in the light theme — see the v14.3.5 light-theme bug
+        report). Now we just toggle a ``selected`` dynamic property
+        on the label; ``QLabel[role="queue-row-label"][selected="..."]``
+        rules in ``theme.py`` pick the right colour for each theme.
         """
         for i in range(self.file_list.count()):
             it = self.file_list.item(i)
@@ -2644,14 +2645,14 @@ class MainWindow(QMainWindow):
             if lbl is None:
                 continue
             sel = bool(it.isSelected())
-            # Color logic mirrors theme.py's QListWidget::item:selected
-            # (white on the orange highlight). No font-weight change —
-            # bolding shifts text width and the label re-lays-out
-            # whenever selection changes, which looks jittery.
-            lbl.setStyleSheet(
-                'QLabel[role="queue-row-label"] { '
-                + ('color: #ffffff; ' if sel else 'color: #e6e6e6; ')
-                + 'background: transparent; }')
+            # Set as string so QSS attribute matching works.
+            new_val = "true" if sel else "false"
+            if lbl.property("selected") != new_val:
+                lbl.setProperty("selected", new_val)
+                # Re-polish so the new property triggers the QSS rule.
+                lbl.style().unpolish(lbl)
+                lbl.style().polish(lbl)
+                lbl.update()
 
     def _populate_profile_combo(self, combo):
         """Fill a per-row profile picker with NO_PROFILE plus saved
