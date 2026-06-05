@@ -1,3 +1,48 @@
+# Veloxa Video Editor — V14.3.4
+
+**Hot-fix.** Hardened the platform-asset selector and added an
+adversarial test suite so a Mac user can NEVER receive a Windows
+``Setup.exe`` and a Windows user can NEVER receive a macOS ``.dmg``
+via the in-app updater.
+
+## What this fixes
+
+The selector in ``app.platform_compat.pick_release_asset`` was already
+platform-aware since V14.2.0, but two ergonomic gaps remained:
+
+1. The "no asset found" log line in ``check_for_updates`` read "release
+   X has no .exe asset" — which on macOS sounded like a Windows-only
+   failure even when the picker had correctly determined the release
+   was missing a ``.dmg``. Updated to "release X has no installer
+   asset for this platform".
+2. There was no explicit regression coverage that asserted the picker
+   refuses to fall back to the *other* platform's installer when only
+   one is present (e.g. if the macOS workflow failed and the release
+   only has a ``.exe``, a Mac user should see "no update available",
+   not be offered a ``.exe`` they can't run).
+
+## Routing guarantees, verified by tests
+
+| Running on | Updater offers | Updater refuses |
+|---|---|---|
+| Windows | ``*Setup*.exe`` → ``*Installer*.exe`` → any ``.exe`` | Anything that isn't ``.exe`` (returns None) |
+| macOS | ``.dmg`` → ``.pkg`` → ``.zip`` | Anything that isn't a Mac container (returns None) |
+| Linux | ``.AppImage`` → ``.deb`` → ``.tar.gz`` | Mismatched OS containers (returns None) |
+
+New ``_qa/v143_platform_asset_routing.py`` exercises:
+
+- Both platforms with the actual V14.3.3 release shape (asset order randomised).
+- Both platforms with corrupt releases (only the *other* OS's asset present).
+- Adversarial filenames designed to confuse the matcher (``Veloxa-macOS-Setup.exe``, ``Veloxa-windows-Setup.dmg``, ``README.dmg``, ``CHANGELOG.exe``).
+- Empty / None asset lists.
+- A LIVE GitHub API call against the published ``v14.3.3`` release that confirms the picker's output URL ends in ``.exe`` for Windows and ``.dmg`` for macOS.
+
+## Test totals
+
+302 / 302 regression probes (7 new V14.3.4 routing probes) + 33 / 33 dispatch + 26 / 26 platform-routing + 15 / 15 audio-template preview + 99 / 99 e2e encode = **475 / 475 PASS**.
+
+---
+
 # Veloxa Video Editor — V14.3.3
 
 **Hot-fix.** Audio Visuals now fill 100 % of the canvas.

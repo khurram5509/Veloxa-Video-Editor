@@ -53,7 +53,7 @@ log = logging.getLogger("veloxa.updater")
 # Single source of truth for the application version. Imported by
 # ``app/docs.py``, ``app/main_window.py`` title bar, and the regression
 # tests. Bump this when cutting a new release.
-APP_VERSION = "14.3.3"
+APP_VERSION = "14.3.4"
 
 # GitHub repo to poll for releases. Format: ``owner/repo`` (no leading
 # slash, no trailing slash). Set to ``""`` to disable update checks
@@ -209,7 +209,11 @@ def check_for_updates(github_repo: str = GITHUB_REPO,
     from .platform_compat import pick_release_asset
     asset = pick_release_asset(data.get("assets") or [])
     if not asset:
-        log.info("Update check: release %s has no .exe asset", tag)
+        # V14.3.4: platform-agnostic log message — was "no .exe asset"
+        # which read as a Windows-specific failure even when running on
+        # macOS (where the picker is looking for a .dmg).
+        log.info("Update check: release %s has no installer asset "
+                 "for this platform", tag)
         return None
     return UpdateInfo(
         version=display_version,
