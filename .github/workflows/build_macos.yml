@@ -152,15 +152,27 @@ jobs:
             --icon Veloxa.icns \
             main.py
           ls -la "dist/Veloxa Video Editor.app/Contents/MacOS"
-          # Move FFmpeg into Resources so platform_compat.find_bundled_ffmpeg
-          # can find it via the documented macOS bundle path. PyInstaller
-          # may put add-data files under Contents/Frameworks; mirror them
-          # into Contents/Resources/ffmpeg as a safety net.
-          APP_RES="dist/Veloxa Video Editor.app/Contents/Resources"
-          if [ -d "dist/Veloxa Video Editor.app/Contents/Frameworks/ffmpeg" ]; then
-            cp -R "dist/Veloxa Video Editor.app/Contents/Frameworks/ffmpeg" "$APP_RES/"
+          # V14.2.0 hot-fix: PyInstaller on macOS already symlinks
+          # Contents/Frameworks <-> Contents/Resources, so the explicit
+          # `cp -R Frameworks/ffmpeg Resources/` from the first workflow
+          # rev would fail with "and are identical (not copied)" — the
+          # ffmpeg directory was reachable via both paths already.
+          # platform_compat.find_bundled_ffmpeg looks at _MEIPASS (which
+          # PyInstaller sets to Contents/Frameworks at runtime) so the
+          # binaries are findable as-is. We just chmod +x as a safety
+          # net for the rare case where archive extraction stripped the
+          # execute bit.
+          BUNDLE="dist/Veloxa Video Editor.app/Contents"
+          if [ -d "$BUNDLE/Frameworks/ffmpeg" ]; then
+            chmod +x "$BUNDLE/Frameworks/ffmpeg/ffmpeg" \
+                     "$BUNDLE/Frameworks/ffmpeg/ffprobe" 2>/dev/null || true
+            ls -la "$BUNDLE/Frameworks/ffmpeg"
           fi
-          chmod +x "$APP_RES/ffmpeg/ffmpeg" "$APP_RES/ffmpeg/ffprobe" 2>/dev/null || true
+          if [ -d "$BUNDLE/Resources/ffmpeg" ] && \
+             [ ! -L "$BUNDLE/Resources/ffmpeg" ]; then
+            chmod +x "$BUNDLE/Resources/ffmpeg/ffmpeg" \
+                     "$BUNDLE/Resources/ffmpeg/ffprobe" 2>/dev/null || true
+          fi
 
       - name: Ad-hoc sign the .app
         run: |
