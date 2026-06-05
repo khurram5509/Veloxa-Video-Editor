@@ -1,3 +1,52 @@
+# Veloxa Video Editor — V14.3.7
+
+**Hot-fix.** First launch after an update no longer fails with **"Failed to load Python DLL ... python314.dll. LoadLibrary: The specified module could not be found."** — you no longer have to close and re-open the app.
+
+## What was happening (the issue)
+
+Up through V14.3.6 the Windows build was produced with PyInstaller's `--onefile` flag — a single 400 MB EXE that, at every launch, extracts its entire bundled payload (Python, Qt, FFmpeg, every DLL we depend on) to a random `%TEMP%\_MEI{N}` directory and then `LoadLibrary`'s `python314.dll` from that directory.
+
+Right after an in-app update, three things were happening simultaneously:
+
+1. The installer had just written a 400 MB EXE to `C:\Program Files\Veloxa Video Editor\`.
+2. Windows Defender's real-time scanner was working through that fresh file, holding open file handles on it (and on the bundled DLLs it streams through the extractor).
+3. The installer's "Launch Veloxa Video Editor V14.x" checkbox launched the new EXE *immediately* — while Defender was still scanning.
+
+The `--onefile` bootloader extracted into `_MEI{N}` and then tried to load `python314.dll` from there, but the loader couldn't satisfy the LoadLibrary call because Defender was holding the bytes. Windows reported it as the generic "specified module could not be found" error. Closing the dialog and re-launching from the Start Menu worked because by then Defender had finished scanning.
+
+## Fix
+
+The Windows build was switched from `--onefile` to `--onedir` (the macOS build has used `--onedir` since V14.2.0). With `--onedir`:
+
+- `python314.dll`, `Qt6Core.dll`, and every other support file live permanently in `C:\Program Files\Veloxa Video Editor\_internal\`.
+- There is **no extraction** at launch. The bootloader is a tiny 2.4 MB launcher that just calls Python directly.
+- The launcher loads `_internal\python314.dll` once, from disk. Defender has long since finished scanning that file (installs leave files in place; the next launch is reading bytes the OS already cached).
+
+Side benefits:
+
+- **Faster launch.** No more 2-5 s extraction wait per cold start.
+- **Smaller installer.** 271 MB (was 396 MB) — many small files compress better than one 400 MB blob inside the Inno Setup bottle.
+- **No more `_MEI*` clutter in `%TEMP%`.** Old builds would leave orphaned `_MEI{N}\` directories behind on crashes; that's gone.
+
+## Implementation
+
+- `build.ps1`: `--onefile` → `--onedir`.
+- `installer.iss`: `[Files]` now copies both the launcher EXE *and* the `_internal\` subtree, with `recursesubdirs createallsubdirs`. `[InstallDelete]` now sweeps `{app}\_internal` before each install so a removed-dependency DLL from an older V14.3.7+ build can't linger.
+- `[Icons]` / `[Run]` keep pointing at the unversioned `Veloxa-Video-Editor.exe`, so all the existing shortcuts and the in-app updater still work without changes.
+
+## Tests
+
+326 / 326 main regression probes pass — 5 new V14.3.7 probes verify the build mode flip in `build.ps1` and the installer's `[Files]` / `[InstallDelete]` changes. Local install + launch round-trip confirmed: kill old, run installer, launch from Start Menu — instant, no DLL error.
+
+## Downloads
+
+- **Windows:** `Veloxa-Video-Editor-V14.3.7-Setup.exe` (271 MB, was 396 MB)
+- **macOS:** `Veloxa-Video-Editor-V14.3.7-macOS.dmg` (~88 MB, unchanged, ad-hoc signed)
+
+Existing V14.3.x users will be offered V14.3.7 via Help → Check for Updates… — Mac users get the .dmg, Windows users get the .exe (per V14.3.4 routing guarantee).
+
+---
+
 # Veloxa Video Editor — V14.3.6
 
 **Hot-fix.** Light theme: queue-row filename text is readable again.

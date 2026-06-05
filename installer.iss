@@ -1,13 +1,13 @@
-; Inno Setup script for Veloxa Video Editor V14.3.6
+; Inno Setup script for Veloxa Video Editor V14.3.7
 ; Builds a single Windows installer EXE that puts the app under
 ; Program Files, creates Start Menu + Desktop shortcuts, and registers
 ; an uninstaller. Run from the project root after building the app:
 ;
 ;   "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" installer.iss
 ;
-; The output lands in .\installer\Veloxa-Video-Editor-V14.3.6-Setup.exe.
+; The output lands in .\installer\Veloxa-Video-Editor-V14.3.7-Setup.exe.
 ;
-; V14.3.6 fix: the installed EXE is now ALWAYS named
+; V14.3.7 fix: the installed EXE is now ALWAYS named
 ; ``Veloxa-Video-Editor.exe`` (no version in the filename), and the
 ; Start Menu / Desktop shortcuts are ALWAYS named ``Veloxa Video Editor``
 ; (no version label). Without this, every release dropped a NEW
@@ -19,13 +19,13 @@
 ; versioned files / shortcuts left behind by V11..V14.0.1 installs.
 
 #define AppName             "Veloxa Video Editor"
-#define AppVersion          "14.3.6"
+#define AppVersion          "14.3.7"
 #define AppPublisher        "VeloxaLAB"
 #define AppExeName          "Veloxa-Video-Editor.exe"
 ; The PyInstaller output is still versioned so dist/ shows the build
 ; we're packaging. Inno renames it to AppExeName at install time via
 ; DestName= in [Files].
-#define AppBuildExe         "Veloxa-Video-Editor-V14.3.6.exe"
+#define AppBuildExe         "Veloxa-Video-Editor-V14.3.7.exe"
 ; AppId kept stable since V11.x so installer-driven upgrades replace
 ; the previous Veloxa install in place. Same GUID for the entire
 ; V11.x -> V14.x series. Do NOT change unless you actually want a
@@ -87,21 +87,31 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional shortcuts:"
 
 [Files]
-; Single self-contained EXE produced by PyInstaller. The DestName flag
-; renames it to the unversioned filename at install time so V14.3.6
-; overwrites V14.0.1 / V13.x.x / V12.x.x even though those builds had
-; versioned filenames.
-Source: "dist\{#AppBuildExe}"; DestDir: "{app}"; DestName: "{#AppExeName}"; Flags: ignoreversion
+; V14.3.7: PyInstaller now produces a --onedir bundle at
+; dist\Veloxa-Video-Editor-V14.3.7\ containing the launcher EXE plus a
+; sibling _internal\ directory with python314.dll, Qt6Core.dll, and
+; every other support file. Copy the whole tree to {app}; the launcher
+; EXE is renamed at install time to the unversioned name so the desktop
+; / start-menu shortcuts and the in-app update flow keep working.
+Source: "dist\Veloxa-Video-Editor-V{#AppVersion}\{#AppBuildExe}"; \
+    DestDir: "{app}"; DestName: "{#AppExeName}"; Flags: ignoreversion
+Source: "dist\Veloxa-Video-Editor-V{#AppVersion}\_internal\*"; \
+    DestDir: "{app}\_internal"; \
+    Flags: ignoreversion recursesubdirs createallsubdirs
 
 [InstallDelete]
-; V14.3.6: clean up legacy versioned filenames + shortcuts left behind
-; by V11 .. V14.0.1 installs. Without this users ended up with
-; multiple "Veloxa Video Editor V<X>" entries in their Start Menu, on
-; their desktop, and stale orphan EXEs in {app}.
+; V14.3.7: clean up legacy versioned filenames + shortcuts left behind
+; by V11 .. V14.3.7 installs (which were single-EXE --onefile builds).
+; Without this users would end up with multiple "Veloxa Video Editor
+; V<X>" entries in their Start Menu, on their desktop, and stale orphan
+; EXEs in {app}. Also wipe any pre-existing _internal\ from a V14.3.7+
+; install in case the dependency tree changed between releases (e.g. a
+; PyQt6 minor bump dropped a DLL we no longer need).
 Type: files; Name: "{app}\Veloxa-Video-Editor-V*.exe"
 Type: files; Name: "{autoprograms}\Veloxa Video Editor V*.lnk"
 Type: files; Name: "{autoprograms}\Uninstall Veloxa Video Editor V*.lnk"
 Type: files; Name: "{autodesktop}\Veloxa Video Editor V*.lnk"
+Type: filesandordirs; Name: "{app}\_internal"
 
 [Icons]
 ; Single, unversioned shortcut. Future versions overwrite this entry
@@ -115,6 +125,9 @@ Name: "{autoprograms}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
 Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName} V{#AppVersion}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
-; PyInstaller --onefile extracts to %TEMP%\_MEI*; that's its own problem.
-; The installed app folder is otherwise just a single EXE — clean it up.
+; V14.3.7: --onedir lays down the EXE + _internal\ subtree under {app}.
+; Sweep the entire install dir on uninstall so no orphan files remain
+; (the launcher EXE, every _internal\ DLL, the ffmpeg subtree, the
+; app.ico). The legacy single-EXE %TEMP%\_MEI* extract paths are no
+; longer created so there's nothing to clean up there.
 Type: filesandordirs; Name: "{app}"
