@@ -1,3 +1,38 @@
+# Veloxa Video Editor — V14.2.0
+
+**Minor release.** First macOS build.
+
+## New: macOS support
+
+- **GitHub Actions workflow** (`.github/workflows/build_macos.yml`) builds a `.app` + `.dmg` on every `v*` tag push, using a free `macos-latest` runner. The `.dmg` is ad-hoc signed and attached to the matching GitHub release alongside the Windows `.exe` installer.
+- **Ad-hoc signed**: macOS users will see *"app from unidentified developer"* on first launch. Right-click → Open bypasses Gatekeeper once and then it opens normally forever. (Full Developer-ID signing + notarisation requires an Apple Developer account — out of scope for V14.2.)
+- **In-app updater is now platform-aware**: on macOS it picks the `.dmg` asset from the release page; on Windows it still picks `*Setup*.exe`. The download flow, transfer-rate read-out, cancel handling, and progress dialog are all identical across platforms.
+
+## Source-level refactor (`app/platform_compat.py`)
+
+New module centralising the Windows-only patches that had leaked into the rest of the app. Single source of truth for:
+
+- `open_in_file_manager(path)` — `os.startfile` on Windows, `open` on macOS, `xdg-open` on Linux.
+- `pick_release_asset(assets)` — `*Setup*.exe` on Windows, `*.dmg` on macOS, `*.AppImage` / `*.deb` / `*.tar.gz` on Linux.
+- `launch_installer(path)` — Win runs `.exe` detached; Mac runs `open` to mount the DMG and show the drag-window in Finder.
+- `find_bundled_ffmpeg()` — knows the `Veloxa.app/Contents/Resources/ffmpeg` layout in addition to the Windows `<exe_dir>/ffmpeg/` convention.
+
+Existing Windows users are completely unaffected — the platform branches all resolve to the same paths they did before.
+
+## How macOS users get it
+
+1. Download `Veloxa-Video-Editor-V14.2.0-macOS.dmg` from the GitHub release.
+2. Double-click to mount.
+3. Drag **Veloxa Video Editor** to **Applications**.
+4. First launch: right-click → Open (Gatekeeper warning, one-time bypass).
+5. From V14.2.0 onward the in-app updater handles future versions automatically.
+
+## How Windows users get it
+
+Same as always — `Help → Check for Updates...` or wait for the startup auto-check.
+
+---
+
 # Veloxa Video Editor — V14.1.1
 
 **Hot-fix.** The V14.1.0 single-instance guard misfired immediately after an in-app update.

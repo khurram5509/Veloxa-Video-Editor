@@ -1,0 +1,197 @@
+# V14.2.0: macOS build pipeline.
+#
+# Triggers on any `v*` tag push (e.g. `v14.2.0`). Builds a PyInstaller
+# .app, wraps it in a .dmg with `create-dmg`, ad-hoc signs both the
+# .app and the .dmg, then uploads the .dmg as an asset on the matching
+# GitHub release. The release is created by hand on the Windows side
+# (see installer.iss + V14.1.x release flow) — this workflow attaches
+# its asset to that existing release.
+#
+# Free GitHub-hosted macos-latest runner. Build time ~6–8 min.
+#
+# Important caveats:
+# * Ad-hoc signing means the user sees an "app from unidentified
+#   developer" warning the first time they open Veloxa.app.
+#   Right-click → Open bypasses it. To eliminate it, the maintainer
+#   needs an Apple Developer ID + app-specific password and the
+#   `codesign --sign` line below changes to use that identity, plus
+#   a notarization step via `xcrun notarytool`. Out of scope for V14.2.
+# * The macOS FFmpeg build is the static "essentials" Mac equivalent
+#   downloaded from evermeet.cx (community-maintained, no install
+#   needed). If that URL ever 404s the workflow will fail loudly.
+
+name: Build macOS .dmg
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (e.g. v14.2.0). Defaults to ref.'
+        required: false
+        default: ''
+
+permissions:
+  contents: write   # so the release-asset upload step can write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          VERSION="${TAG#v}"
+          echo "tag=$TAG"           >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION"   >> "$GITHUB_OUTPUT"
+          echo "Building tag=$TAG version=$VERSION"
+
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          # PyQt6 + multimedia + PyInstaller; rest of deps come from
+          # requirements.txt (Pillow, etc.).
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Fetch macOS FFmpeg essentials build
+        run: |
+          set -e
+          mkdir -p ffmpeg
+          # evermeet.cx ships static-linked FFmpeg/FFprobe builds for
+          # macOS arm64+x86_64 (universal) under stable URLs.
+          curl -L -o ffmpeg.zip   https://evermeet.cx/ffmpeg/getrelease/zip
+          curl -L -o ffprobe.zip  https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip
+          unzip -o ffmpeg.zip  -d ffmpeg
+          unzip -o ffprobe.zip -d ffmpeg
+          chmod +x ffmpeg/ffmpeg ffmpeg/ffprobe
+          ./ffmpeg/ffmpeg  -version | head -3
+          ./ffmpeg/ffprobe -version | head -3
+
+      - name: Generate app.icns from app.ico
+        run: |
+          set -e
+          # macOS app icons are .icns. Use sips to convert the existing
+          # 256x256 layer from app.ico into a series of PNGs, then
+          # iconutil to bundle them into Veloxa.icns.
+          python make_icon.py || true
+          ICONSET=Veloxa.iconset
+          mkdir -p "$ICONSET"
+          # Extract a high-res PNG from app.ico. sips on macOS will
+          # read .ico; pick the largest available layer.
+          sips -s format png app.ico --out "$ICONSET/icon_512x512.png" >/dev/null
+          for SZ in 16 32 64 128 256 512; do
+            sips -z $SZ $SZ "$ICONSET/icon_512x512.png" --out "$ICONSET/icon_${SZ}x${SZ}.png" >/dev/null
+          done
+          iconutil -c icns "$ICONSET" -o Veloxa.icns
+          ls -la Veloxa.icns
+
+      - name: Build .app with PyInstaller
+        run: |
+          set -e
+          # --windowed builds a real .app bundle on macOS (the Windows
+          # equivalent is "no console attached"). --osx-bundle-identifier
+          # is required for Gatekeeper. --icon takes the .icns we just
+          # built.
+          pyinstaller --noconfirm --windowed --onedir \
+            --name "Veloxa Video Editor" \
+            --osx-bundle-identifier com.veloxalab.veloxa-video-editor \
+            --paths . \
+            --add-data "ffmpeg:ffmpeg" \
+            --add-data "app.ico:." \
+            --collect-all PyQt6.QtMultimedia \
+            --collect-all PyQt6.QtMultimediaWidgets \
+            --collect-all PyQt6.QtNetwork \
+            --icon Veloxa.icns \
+            main.py
+          ls -la "dist/Veloxa Video Editor.app/Contents/MacOS"
+          # Move FFmpeg into Resources so platform_compat.find_bundled_ffmpeg
+          # can find it via the documented macOS bundle path. PyInstaller
+          # may put add-data files under Contents/Frameworks; mirror them
+          # into Contents/Resources/ffmpeg as a safety net.
+          APP_RES="dist/Veloxa Video Editor.app/Contents/Resources"
+          if [ -d "dist/Veloxa Video Editor.app/Contents/Frameworks/ffmpeg" ]; then
+            cp -R "dist/Veloxa Video Editor.app/Contents/Frameworks/ffmpeg" "$APP_RES/"
+          fi
+          chmod +x "$APP_RES/ffmpeg/ffmpeg" "$APP_RES/ffmpeg/ffprobe" 2>/dev/null || true
+
+      - name: Ad-hoc sign the .app
+        run: |
+          # Sign with the ad-hoc identity (`-`). This adds a signature
+          # so the binary isn't completely unsigned, but Gatekeeper
+          # will still warn ("unidentified developer") since there's
+          # no Developer ID. For full notarization, swap `-` for the
+          # Developer ID Application identity and add notarytool.
+          codesign --deep --force --sign - "dist/Veloxa Video Editor.app"
+          codesign --verify --verbose "dist/Veloxa Video Editor.app"
+
+      - name: Install create-dmg
+        run: brew install create-dmg
+
+      - name: Build .dmg
+        run: |
+          set -e
+          VERSION="${{ steps.tag.outputs.version }}"
+          DMG="Veloxa-Video-Editor-V${VERSION}-macOS.dmg"
+          create-dmg \
+            --volname "Veloxa Video Editor V${VERSION}" \
+            --window-pos 200 120 \
+            --window-size 600 320 \
+            --icon-size 96 \
+            --icon "Veloxa Video Editor.app" 150 150 \
+            --hide-extension "Veloxa Video Editor.app" \
+            --app-drop-link 450 150 \
+            --hdiutil-quiet \
+            "$DMG" \
+            "dist/Veloxa Video Editor.app"
+          ls -la "$DMG"
+          # Ad-hoc sign the DMG too (some macOS versions block
+          # unsigned DMGs from mounting via double-click).
+          codesign --force --sign - "$DMG" || true
+
+      - name: Upload .dmg to the matching release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          VERSION="${{ steps.tag.outputs.version }}"
+          TAG="${{ steps.tag.outputs.tag }}"
+          DMG="Veloxa-Video-Editor-V${VERSION}-macOS.dmg"
+          # If a release for $TAG already exists (created on the
+          # Windows side via the existing build flow), upload to it.
+          # Otherwise create it.
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$DMG" --repo "${{ github.repository }}" --clobber
+          else
+            gh release create "$TAG" "$DMG" --repo "${{ github.repository }}" \
+              --title "Veloxa Video Editor V${VERSION}" \
+              --notes "macOS build attached. The Windows installer is added by the Windows build pipeline."
+          fi
+
+      - name: Summary
+        run: |
+          VERSION="${{ steps.tag.outputs.version }}"
+          echo "✅ Built Veloxa-Video-Editor-V${VERSION}-macOS.dmg"
+          echo "   Attached to release ${{ steps.tag.outputs.tag }}"
+          echo "   Users open the .dmg, drag Veloxa Video Editor.app to /Applications,"
+          echo "   right-click → Open the first time (Gatekeeper warning expected)."

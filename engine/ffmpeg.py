@@ -31,7 +31,19 @@ def _candidate_dirs():
 
 
 def find_ffmpeg():
-    """Return ``(ffmpeg_path, ffprobe_path)``; either may be ``None``."""
+    """Return ``(ffmpeg_path, ffprobe_path)``; either may be ``None``.
+
+    V14.2.0: delegates to ``app.platform_compat.find_bundled_ffmpeg``
+    which also knows about the macOS .app bundle layout
+    (``Veloxa.app/Contents/Resources/ffmpeg``). Falls through to the
+    historic ``_candidate_dirs`` scan if the platform_compat helper
+    is unavailable (e.g. engine used outside the app package).
+    """
+    try:
+        from app.platform_compat import find_bundled_ffmpeg
+        return find_bundled_ffmpeg()
+    except ImportError:
+        pass
     ff_name = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
     fp_name = "ffprobe.exe" if sys.platform == "win32" else "ffprobe"
     for d in _candidate_dirs():

@@ -53,7 +53,7 @@ log = logging.getLogger("veloxa.updater")
 # Single source of truth for the application version. Imported by
 # ``app/docs.py``, ``app/main_window.py`` title bar, and the regression
 # tests. Bump this when cutting a new release.
-APP_VERSION = "14.1.1"
+APP_VERSION = "14.2.0"
 
 # GitHub repo to poll for releases. Format: ``owner/repo`` (no leading
 # slash, no trailing slash). Set to ``""`` to disable update checks
@@ -134,6 +134,10 @@ def _pick_windows_asset(assets: list) -> Optional[dict]:
     """Choose the Windows installer asset from a GitHub release's
     ``assets`` array. Preference order: ``*Setup*.exe`` >
     ``*Installer*.exe`` > any ``*.exe`` > ``None``. Case-insensitive.
+
+    V14.2.0: kept under the original name for back-compat with the
+    regression suite; for cross-platform asset selection use
+    :func:`app.platform_compat.pick_release_asset` instead.
     """
     if not assets:
         return None
@@ -198,7 +202,12 @@ def check_for_updates(github_repo: str = GITHUB_REPO,
     display_version = tag.lstrip("vV")
     if not is_newer(display_version, local_version):
         return None
-    asset = _pick_windows_asset(data.get("assets") or [])
+    # V14.2.0: pick platform-appropriate asset (.exe on Windows,
+    # .dmg on macOS, .AppImage on Linux). The legacy
+    # _pick_windows_asset is kept for the regression suite + as the
+    # implementation of the Windows branch.
+    from .platform_compat import pick_release_asset
+    asset = pick_release_asset(data.get("assets") or [])
     if not asset:
         log.info("Update check: release %s has no .exe asset", tag)
         return None
@@ -391,26 +400,17 @@ def launch_installer_and_quit(installer_path: str,
                               quit_callback: Optional[Callable[[], None]] = None
                               ) -> bool:
     """Spawn the downloaded installer and call ``quit_callback`` (the
-    GUI quitter). The installer reuses our stable ``AppId`` to upgrade
-    in place. Returns ``True`` on successful spawn.
+    GUI quitter). On Windows the installer reuses our stable ``AppId``
+    to upgrade in place. On macOS the ``.dmg`` is mounted via ``open``
+    and the user drags Veloxa.app to /Applications. Returns ``True``
+    on successful spawn.
+
+    V14.2.0: delegated to :func:`app.platform_compat.launch_installer`
+    so the per-OS quirks (DETACHED_PROCESS on Windows, ``open`` on
+    macOS, +x bit on Linux) live in one place.
     """
-    if not installer_path or not os.path.exists(installer_path):
-        return False
-    try:
-        # CREATE_NEW_PROCESS_GROUP + DETACHED_PROCESS so the installer
-        # survives this process exiting; close_fds so we don't pin our
-        # log handles into the child.
-        flags = 0
-        if sys.platform == "win32":
-            flags = (subprocess.CREATE_NEW_PROCESS_GROUP
-                     | getattr(subprocess, "DETACHED_PROCESS", 0))
-        subprocess.Popen(
-            [installer_path],
-            close_fds=True,
-            creationflags=flags,
-        )
-    except OSError as exc:
-        log.warning("Could not launch installer: %s", exc)
+    from .platform_compat import launch_installer
+    if not launch_installer(installer_path):
         return False
     if quit_callback:
         try:

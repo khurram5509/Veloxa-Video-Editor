@@ -372,10 +372,9 @@ class ManageSavedDataDialog(QDialog):
 
     def _open_folder(self):
         from .profile_assets import assets_root
+        from .platform_compat import open_in_file_manager
         root = str(assets_root())
-        try:
-            os.startfile(root)  # type: ignore[attr-defined]  Windows-only
-        except (AttributeError, OSError):
+        if not open_in_file_manager(root):
             QMessageBox.information(self, "Folder", root)
 
 

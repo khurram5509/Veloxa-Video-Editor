@@ -2093,10 +2093,9 @@ class MainWindow(QMainWindow):
         show_info_dialog(self, "License", LICENSE_HTML)
 
     def _open_log_folder(self):
-        try:
-            os.startfile(str(log_dir()))
-        except OSError:
-            pass
+        # V14.2.0: cross-platform via platform_compat.
+        from .platform_compat import open_in_file_manager
+        open_in_file_manager(log_dir())
 
     # ====================================================== queue
 
@@ -2947,14 +2946,11 @@ class MainWindow(QMainWindow):
         self._save_queue_state()
 
     def _open_in_explorer(self, p: Path):
-        try:
-            if sys.platform == "win32":
-                os.startfile(str(p))
-            else:
-                import subprocess
-                subprocess.Popen(["xdg-open", str(p)])
-        except OSError:
-            pass
+        """V14.2.0: delegated to platform_compat so macOS gets
+        Finder via ``open`` rather than the Linux ``xdg-open``
+        fallback that V14.1.x defaulted to."""
+        from .platform_compat import open_in_file_manager
+        open_in_file_manager(p)
 
     # ---- V12.3.1: quality-tier hint refreshers ---------------------------
 

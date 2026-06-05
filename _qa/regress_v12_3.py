@@ -618,7 +618,7 @@ from app.updater import (
 )
 
 # Version is correctly bumped.
-check("APP_VERSION = '14.1.1'", _APP_VERSION == "14.1.1",
+check("APP_VERSION = '14.2.0'", _APP_VERSION == "14.2.0",
       f"got {_APP_VERSION!r}")
 check("GITHUB_REPO is khurram5509/Veloxa-Video-Editor",
       _u.GITHUB_REPO == "khurram5509/Veloxa-Video-Editor",
@@ -642,7 +642,7 @@ check("'v' prefix tolerated either side",
       _vc("v13.0", "V13.0") == 0)
 
 # is_newer convenience.
-check("is_newer('14.1.1', '13.0')", _newer("14.1.1", "13.0"))
+check("is_newer('14.2.0', '13.0')", _newer("14.2.0", "13.0"))
 check("not is_newer('12.9.99', '13.0')",
       not _newer("12.9.99", "13.0"))
 check("not is_newer('13.0', '13.0')",
@@ -725,16 +725,16 @@ check("docs.py advertises auto-update feature",
 
 # Installer.iss + build.ps1 carry the new version.
 iss_src = open(ROOT / "installer.iss", encoding="utf-8").read()
-check("installer.iss AppVersion = 14.1.1", '"14.1.1"' in iss_src)
-check("installer.iss EXE name = V14.1.1.exe",
-      "Veloxa-Video-Editor-V14.1.1.exe" in iss_src)
+check("installer.iss AppVersion = 14.2.0", '"14.2.0"' in iss_src)
+check("installer.iss EXE name = V14.2.0.exe",
+      "Veloxa-Video-Editor-V14.2.0.exe" in iss_src)
 check("installer.iss preserves stable AppId across V12 -> V13",
       "F2E1A8C4-1E5B-4C9A-9B27-VELOXA-VID-V121" in iss_src)
 ps1_src = open(ROOT / "build.ps1", encoding="utf-8").read()
-check("build.ps1 builds V14.1.1 EXE",
-      "Veloxa-Video-Editor-V14.1.1" in ps1_src)
+check("build.ps1 builds V14.2.0 EXE",
+      "Veloxa-Video-Editor-V14.2.0" in ps1_src)
 
-# V14.1.1 crash-fix: stale C++-object guard in _start_update_check.
+# V14.2.0 crash-fix: stale C++-object guard in _start_update_check.
 mw_src2 = open(ROOT / "app" / "main_window.py", encoding="utf-8").read()
 check("_start_update_check guards RuntimeError on stale wrapper",
       "except RuntimeError" in mw_src2
@@ -744,9 +744,9 @@ check("_on_update_checker_finished clears the Python ref",
 
 
 # ===========================================================================
-# 13. V14.1.1: System / Light / Dark theme switcher
+# 13. V14.2.0: System / Light / Dark theme switcher
 # ===========================================================================
-section("V14.1.1: theme switcher")
+section("V14.2.0: theme switcher")
 
 from app.theme import (
     DARK_QSS, LIGHT_QSS,
@@ -769,7 +769,7 @@ check("DARK_QSS and LIGHT_QSS differ (not a copy/paste)",
 check("dark theme uses brand orange",  "#f58220" in DARK_QSS)
 check("light theme uses brand orange", "#f58220" in LIGHT_QSS)
 
-# V14.1.1: light theme redesign — depth + hierarchy.
+# V14.2.0: light theme redesign — depth + hierarchy.
 check("light theme uses qlineargradient for button/input depth",
       "qlineargradient" in LIGHT_QSS)
 check("light theme uses tinted off-white main bg (cards stand out)",
@@ -854,7 +854,7 @@ for k in AUDIO_TEMPLATE_ORDER:
           and lbl == "[vout]" and "[aout]" in fc,
           f"label={lbl!r}, fc[:60]={fc[:60]!r}")
 
-# V14.1.1: actually run each template's filter graph through FFmpeg
+# V14.2.0: actually run each template's filter graph through FFmpeg
 # (against a silent lavfi audio source) so any "Option not found" /
 # syntax errors fail loudly rather than at the user's encode time.
 import subprocess as _sp
@@ -912,9 +912,9 @@ check("profile_opts passes audio_template through",
 
 
 # ===========================================================================
-# 15. V14.1.1: updater download runs on a QThread (no more GUI freeze)
+# 15. V14.2.0: updater download runs on a QThread (no more GUI freeze)
 # ===========================================================================
-section("V14.1.1: updater download worker")
+section("V14.2.0: updater download worker")
 
 from app.updater import DownloadWorker as _DW
 import inspect as _inspectV14
@@ -933,7 +933,7 @@ check("DownloadWorker passes a cancel callback",
 # download_installer uses 1 MB chunks.
 import app.updater as _upd
 _di_src = _inspectV14.getsource(_upd.download_installer)
-check("download_installer chunk size = 64 KB (V14.1.1 perf fix)",
+check("download_installer chunk size = 64 KB (V14.2.0 perf fix)",
       "chunk_size = 64 * 1024" in _di_src,
       "V14.0.1 incorrectly bumped to 1 MB and tanked throughput")
 
@@ -953,9 +953,9 @@ check("Progress bar uses 0..1000 range for sub-percent granularity",
 
 
 # ===========================================================================
-# 16. V14.1.1: preview overlay clears + installer no longer side-by-side
+# 16. V14.2.0: preview overlay clears + installer no longer side-by-side
 # ===========================================================================
-section("V14.1.1: preview clear + installer overwrite")
+section("V14.2.0: preview clear + installer overwrite")
 
 mw_v142 = open(ROOT / "app" / "main_window.py", encoding="utf-8").read()
 
@@ -993,9 +993,9 @@ check("installer sets VersionInfo* so Setup EXE icon shows",
 
 
 # ===========================================================================
-# 17. V14.1.1: Single instance + HiDPI + responsive hardening
+# 17. V14.2.0: Single instance + HiDPI + responsive hardening
 # ===========================================================================
-section("V14.1.1: single-instance, HiDPI, min size")
+section("V14.2.0: single-instance, HiDPI, min size")
 
 # Single-instance module exists and exposes the public API.
 from app import single_instance as _si
@@ -1036,9 +1036,9 @@ check("MainWindow still calls saveGeometry on close",
 
 
 # ===========================================================================
-# 18. V14.1.1: single-instance ACK handshake + dynamic version log
+# 18. V14.2.0: single-instance ACK handshake + dynamic version log
 # ===========================================================================
-section("V14.1.1: single-instance ACK + dynamic persistence version")
+section("V14.2.0: single-instance ACK + dynamic persistence version")
 
 si_src = inspect.getsource(_si)
 check("single_instance defines ACK_MAGIC",
@@ -1056,6 +1056,80 @@ pers = open(ROOT / "app" / "persistence.py", encoding="utf-8").read()
 check("persistence.py reads APP_VERSION dynamically (no V13.0 hardcode)",
       "from .updater import APP_VERSION" in pers
       and "V13.0 session start" not in pers)
+
+
+# ===========================================================================
+# 19. V14.2.0: macOS source-level support + GitHub Actions
+# ===========================================================================
+section("V14.2.0: cross-platform foundation")
+
+from app import platform_compat as _pc
+check("platform_compat exposes IS_WIN / IS_MAC / IS_LINUX",
+      hasattr(_pc, "IS_WIN") and hasattr(_pc, "IS_MAC")
+      and hasattr(_pc, "IS_LINUX"))
+check("platform_tag returns 'windows' on Windows host",
+      _pc.platform_tag() in ("windows", "macos", "linux"))
+
+# Asset picker honours platform: Windows host should still pick .exe.
+mac_assets = [
+    {"name": "Veloxa-Video-Editor-V14.2.0-Setup.exe"},
+    {"name": "Veloxa-Video-Editor-V14.2.0-macOS.dmg"},
+]
+picked = _pc.pick_release_asset(mac_assets)
+if _pc.IS_WIN:
+    check("pick_release_asset on Windows -> .exe",
+          picked and picked["name"].endswith(".exe"))
+elif _pc.IS_MAC:
+    check("pick_release_asset on macOS -> .dmg",
+          picked and picked["name"].endswith(".dmg"))
+
+# Legacy back-compat: _pick_windows_asset still pickable for tests.
+from app.updater import _pick_windows_asset
+check("Legacy _pick_windows_asset still selects .exe assets",
+      _pick_windows_asset(mac_assets) and
+      _pick_windows_asset(mac_assets)["name"].endswith(".exe"))
+
+# updater.check_for_updates now uses pick_release_asset (delegated).
+_check_for_updates_src = inspect.getsource(_u.check_for_updates)
+check("check_for_updates uses pick_release_asset (platform-aware)",
+      "pick_release_asset" in _check_for_updates_src)
+
+# launch_installer_and_quit delegates to platform_compat.launch_installer.
+_lia_src = inspect.getsource(_u.launch_installer_and_quit)
+check("launch_installer_and_quit delegates to platform_compat",
+      "launch_installer" in _lia_src and "platform_compat" in _lia_src)
+
+# Engine ffmpeg locator delegates to platform_compat.
+from engine import ffmpeg as _ff_mod
+_ff_src = inspect.getsource(_ff_mod.find_ffmpeg)
+check("engine.find_ffmpeg tries platform_compat first",
+      "platform_compat" in _ff_src and "find_bundled_ffmpeg" in _ff_src)
+
+# main_window's _open_in_explorer + _open_log_folder use platform_compat.
+mw_v142 = open(ROOT / "app" / "main_window.py", encoding="utf-8").read()
+check("_open_in_explorer uses platform_compat.open_in_file_manager",
+      "_open_in_explorer" in mw_v142
+      and "open_in_file_manager" in mw_v142)
+check("dialogs._open_folder uses platform_compat.open_in_file_manager",
+      "open_in_file_manager" in open(ROOT / "app" / "dialogs.py",
+                                     encoding="utf-8").read())
+
+# GitHub Actions workflow exists + targets macOS runner.
+gha_path = ROOT / ".github" / "workflows" / "build_macos.yml"
+check("GitHub Actions workflow .github/workflows/build_macos.yml exists",
+      gha_path.exists())
+gha_src = gha_path.read_text(encoding="utf-8") if gha_path.exists() else ""
+check("Workflow triggers on v* tag push",
+      "tags:" in gha_src and "v*" in gha_src)
+check("Workflow uses macos-latest runner",
+      "macos-latest" in gha_src)
+check("Workflow builds .app + .dmg + ad-hoc signs",
+      "pyinstaller" in gha_src.lower()
+      and "create-dmg" in gha_src
+      and "codesign --deep --force --sign -" in gha_src)
+check("Workflow uploads .dmg to the matching release",
+      "gh release upload" in gha_src
+      and ".dmg" in gha_src)
 
 
 # ===========================================================================
