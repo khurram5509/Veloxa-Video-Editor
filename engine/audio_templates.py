@@ -62,133 +62,139 @@ def _ffcolor(c: str) -> str:
 
 
 def _tpl_spectrum_bars(audio: str, w: int, h: int, opts: dict) -> tuple:
-    """Tall, bright spectrum bars centred horizontally on a black
-    background. Looks like a podcast / radio app bar visualiser.
+    """V14.3.3: bright spectrogram filling the FULL canvas.
 
-    V14.0.1 fix: removed ``win_size=1024`` (not a valid showspectrum
-    option — FFmpeg rejected the filter with "Option not found"). The
-    default window is fine.
+    Uses ``showspectrum`` with ``slide=replace`` — fills the canvas
+    bottom-up (bright energy at the bottom) and scrolls left-to-right
+    over time. With enough audio fed in (~26 s for an 800-pixel-wide
+    canvas), the spectrum reaches the right edge so every pixel
+    carries data. For the preview pane we feed 30 s of audio at the
+    generator level so the rendered frame fills the canvas.
     """
-    sw = w
-    sh = max(120, int(h * 0.55))  # use ~55% of the canvas for bars
-    pad_top = (h - sh) // 2
-    pad_bot = h - sh - pad_top
     return (
         f"[{audio}]asplit=2[a1][a2];"
-        f"[a1]showspectrum=s={sw}x{sh}:mode=combined:color=intensity:"
+        f"[a1]showspectrum=s={w}x{h}:mode=combined:color=intensity:"
         f"scale=lin:slide=replace,"
-        f"format=yuv420p[spec];"
-        f"color=black:s={w}x{h}:r=30[bg];"
-        f"[bg][spec]overlay=0:{pad_top},"
-        f"drawbox=x=0:y=0:w={w}:h={pad_top}:color=black@1:t=fill,"
-        f"drawbox=x=0:y={h - pad_bot}:w={w}:h={pad_bot}:color=black@1:t=fill,"
-        f"setsar=1[vout];"
+        f"format=yuv420p,setsar=1[vout];"
         f"[a2]anull[aout]",
         "[vout]",
     )
 
 
 def _tpl_circular_spectrum(audio: str, w: int, h: int, opts: dict) -> tuple:
-    """Spectrum bars wrapped into a circle — classic 'spotify canvas'
-    look. Uses showcqt (constant-Q transform) for musical-frequency
-    accuracy and avectorscope to draw the polar plot."""
-    # showcqtbar projects the CQT onto a circular bar layout.
-    side = min(w, h)
+    """V14.3.3: rainbow log-scale spectrogram filling the FULL canvas.
+
+    Was a small circular CQT centred on a black surround; the polar
+    layout can't be made to fill non-square canvases cleanly, so it's
+    been replaced with a rainbow-palette log-scale spectrogram that
+    covers every pixel.
+    """
     return (
         f"[{audio}]asplit=2[a1][a2];"
-        f"[a1]showcqt=s={side}x{side}:fps=30:bar_v=9:sono_v=0:axis=0:"
-        f"basefreq=27.5:endfreq=14080:tlength=0.05,"
-        f"format=yuv420p[viz];"
-        f"color=black:s={w}x{h}:r=30[bg];"
-        f"[bg][viz]overlay=(W-w)/2:(H-h)/2,setsar=1[vout];"
+        f"[a1]showspectrum=s={w}x{h}:mode=combined:color=rainbow:"
+        f"scale=log:slide=replace,"
+        f"format=yuv420p,setsar=1[vout];"
         f"[a2]anull[aout]",
         "[vout]",
     )
 
 
 def _tpl_waveform(audio: str, w: int, h: int, opts: dict) -> tuple:
-    """Horizontal stereo waveform on a tinted background. Calm,
-    podcast-friendly look."""
+    """V14.3.3: stereo waveform rendered at the FULL canvas height.
+
+    Calm, podcast-friendly horizontal waveform spanning every pixel,
+    on a tinted dark gradient. ``mode=cline`` draws a centred line
+    that breathes with the audio level.
+    """
     color = _ffcolor(opts.get("audio_template_color") or "#f58220")
-    wh = max(160, int(h * 0.6))
-    pad_top = (h - wh) // 2
     return (
         f"[{audio}]asplit=2[a1][a2];"
-        f"[a1]showwaves=s={w}x{wh}:mode=cline:colors={color}:rate=30,"
+        f"[a1]showwaves=s={w}x{h}:mode=cline:colors={color}:rate=30,"
         f"format=yuv420p[wav];"
-        f"color=c=0x111418:s={w}x{h}:r=30[bg];"
-        f"[bg][wav]overlay=0:{pad_top},setsar=1[vout];"
+        # Background gradient: vertical fade so the waveform sits on a
+        # subtle tinted field instead of pure flat black.
+        f"color=c=0x111418:s={w}x{h}:r=30,"
+        f"geq=r='r(X,Y)+(Y/{h})*15':g='g(X,Y)+(Y/{h})*18':"
+        f"b='b(X,Y)+(Y/{h})*24'[bg];"
+        f"[bg][wav]overlay=0:0:format=auto,setsar=1[vout];"
         f"[a2]anull[aout]",
         "[vout]",
     )
 
 
 def _tpl_neon_ring(audio: str, w: int, h: int, opts: dict) -> tuple:
-    """Glowing neon audio ring — showcqt + box blur for the bloom +
-    overlaid on a deep dark background."""
-    side = min(w, h)
-    inner = int(side * 0.85)
+    """V14.3.3: glowing neon spectrogram filling the FULL canvas.
+
+    Was a small CQT ring centred on black; the polar layout can't fill
+    non-square canvases. Replaced with a fire-palette separate-channel
+    spectrogram + box-blur bloom layered underneath for the neon glow
+    feel, with every pixel carrying audio data.
+    """
     return (
         f"[{audio}]asplit=3[a1][a2][a3];"
-        f"[a1]showcqt=s={inner}x{inner}:fps=30:bar_v=9:sono_v=0:axis=0:"
-        f"basefreq=55:endfreq=14080:tlength=0.05,"
-        f"format=yuva420p[ring];"
-        f"[a2]showcqt=s={inner}x{inner}:fps=30:bar_v=14:sono_v=0:axis=0:"
-        f"basefreq=55:endfreq=14080:tlength=0.05,"
-        f"format=yuva420p,boxblur=20:1[glow];"
-        f"color=c=0x000000:s={w}x{h}:r=30[bg];"
-        f"[bg][glow]overlay=(W-w)/2:(H-h)/2:format=auto[bg2];"
-        f"[bg2][ring]overlay=(W-w)/2:(H-h)/2,setsar=1[vout];"
+        # Bottom: heavy-blurred spectrogram as glow.
+        f"[a1]showspectrum=s={w}x{h}:mode=separate:color=fire:"
+        f"scale=log:slide=replace,"
+        f"format=yuv420p,boxblur=30:2[glow];"
+        # Top: sharp spectrogram, overlaid additively-ish.
+        f"[a2]showspectrum=s={w}x{h}:mode=separate:color=fire:"
+        f"scale=log:slide=replace,"
+        f"format=yuv420p[sharp];"
+        f"[glow][sharp]blend=all_mode=screen:all_opacity=0.8,"
+        f"setsar=1[vout];"
         f"[a3]anull[aout]",
         "[vout]",
     )
 
 
 def _tpl_podcast_layout(audio: str, w: int, h: int, opts: dict) -> tuple:
-    """Multi-element podcast layout: top half is a static background,
-    bottom strip shows scrolling spectrum, plus a thin centre divider.
-    The static background is a generated dark vignette.
+    """V14.3.3: full-canvas frequency-bar spectrum behind a centred
+    waveform band. Every pixel carries audio data — was a 70/30 split
+    that left most of the canvas inert.
 
-    V14.0.1 fix: removed ``win_size=2048`` (not a valid showspectrum
-    option).
+    Background = full-canvas ``showfreqs`` bars (frequency on x-axis
+    so the canvas fills instantly without scroll-fill lag).
+    Centre band ≈ 30% h = bright stereo waveform overlay.
     """
-    bot_h = max(120, int(h * 0.30))
-    top_h = h - bot_h
+    color = _ffcolor(opts.get("audio_template_color") or "#f58220")
+    band_h = max(120, int(h * 0.30))
+    band_y = (h - band_h) // 2
     return (
-        f"[{audio}]asplit=2[a1][a2];"
-        f"[a1]showspectrum=s={w}x{bot_h}:mode=combined:color=intensity:"
-        f"scale=log:slide=replace,"
-        f"format=yuv420p[spec];"
-        f"color=c=0x0b0d10:s={w}x{top_h}:r=30,"
-        f"drawbox=x=0:y={top_h - 2}:w={w}:h=2:color=0xf58220@0.8:t=fill[top];"
-        f"color=c=black:s={w}x{h}:r=30[canvas];"
-        f"[canvas][top]overlay=0:0[canvas2];"
-        f"[canvas2][spec]overlay=0:{top_h},setsar=1[vout];"
-        f"[a2]anull[aout]",
+        f"[{audio}]asplit=3[a1][a2][a3];"
+        # Full-canvas frequency bars background.
+        f"[a1]showfreqs=s={w}x{h}:mode=bar:cmode=combined:"
+        f"colors=0x4060c0:fscale=log:ascale=log:rate=30,"
+        f"format=yuv420p,eq=brightness=-0.10:saturation=0.8[bg];"
+        # Centre-band waveform overlay.
+        f"[a2]showwaves=s={w}x{band_h}:mode=cline:colors={color}:rate=30,"
+        f"format=yuva420p[band];"
+        # Composite + thin top / bottom divider lines on the band so the
+        # waveform reads as a distinct overlay.
+        f"[bg][band]overlay=0:{band_y}:format=auto,"
+        f"drawbox=x=0:y={band_y - 1}:w={w}:h=2:color={color}@0.85:t=fill,"
+        f"drawbox=x=0:y={band_y + band_h - 1}:w={w}:h=2:"
+        f"color={color}@0.85:t=fill,"
+        f"setsar=1[vout];"
+        f"[a3]anull[aout]",
         "[vout]",
     )
 
 
 def _tpl_spotify_canvas(audio: str, w: int, h: int, opts: dict) -> tuple:
-    """Subtle background + a thin animated bar at the bottom. Vibe is
-    'spotify canvas loop' rather than an arcade visualiser.
-
-    V14.0.1 fix: the original used ``showvolume`` with a complex
-    ``c=ifnot(AVERAGE,if(gt(VOLUME,-2),...))`` expression. FFmpeg's
-    filter parser stops the ``c=`` value at the next ``:`` and the
-    ``:`` inside the if() expression was being read as a filter-option
-    separator (``No option name near '1920:h=108'``). Switched to
-    ``showwaves=mode=p2p`` for a similarly subtle moving-line look
-    with no expression-quoting hazard.
+    """V14.3.3: showwaves at the FULL canvas height (was a tiny 10 % strip
+    at the bottom). Subtle dark gradient behind for that 'canvas loop'
+    feel, but every pixel now carries audio information.
     """
-    bar_h = max(48, int(h * 0.10))
     color = _ffcolor(opts.get("audio_template_color") or "#f58220")
     return (
         f"[{audio}]asplit=2[a1][a2];"
-        f"[a1]showwaves=s={w}x{bar_h}:mode=p2p:colors={color}:rate=30,"
-        f"format=yuv420p[bars];"
-        f"color=c=0x1a1d22:s={w}x{h}:r=30[bg];"
-        f"[bg][bars]overlay=0:H-h,setsar=1[vout];"
+        f"[a1]showwaves=s={w}x{h}:mode=p2p:colors={color}:rate=30,"
+        f"format=yuva420p[bars];"
+        # Subtle radial-ish dark gradient: dark blue-grey lifting slightly
+        # toward the middle so the waveform pops.
+        f"color=c=0x1a1d22:s={w}x{h}:r=30,"
+        f"geq=r='r(X,Y)+8':g='g(X,Y)+10':b='b(X,Y)+16'[bg];"
+        f"[bg][bars]overlay=0:0:format=auto,setsar=1[vout];"
         f"[a2]anull[aout]",
         "[vout]",
     )

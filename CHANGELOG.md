@@ -1,3 +1,37 @@
+# Veloxa Video Editor — V14.3.3
+
+**Hot-fix.** Audio Visuals now fill 100 % of the canvas.
+
+## What was broken
+
+Every audio-visual template had unused black space:
+
+- **Spectrum Bars** — 55 % height + black bars top / bottom; only ~25 % horizontal coverage in short audio because the spectrogram scrolls.
+- **Circular Spectrum** — small centred square ring on a wide black surround.
+- **Waveform** — 60 % height waveform with black bands above / below.
+- **Neon Audio Ring** — tiny centred ring + glow on a mostly-black background.
+- **Podcast Layout** — 70 % dark hero with only a 30 % spectrum strip at the bottom.
+- **Spotify Canvas Style** — flat dark canvas with a 10 %-tall bar at the foot.
+
+The user shouldn't see flat black voids — they picked a visual, they expect a visual.
+
+## Fix
+
+Every template rewritten to fill every pixel of the output:
+
+- **Spectrum Bars** — full-canvas `showspectrum` with `mode=combined`, `color=intensity`, `scale=lin`.
+- **Circular Spectrum** — full-canvas `showspectrum` with `mode=combined`, `color=rainbow`, `scale=log` (the polar layout can't fill non-square canvases cleanly so the visual style was reinterpreted as a vivid rainbow spectrogram).
+- **Waveform** — `showwaves` at full canvas dimensions.
+- **Neon Audio Ring** — full-canvas fire-palette `mode=separate` spectrogram + a heavily-blurred copy blended in screen mode for the neon-glow feel.
+- **Podcast Layout** — full-canvas spectrogram background with a centred waveform band overlaid; thin accent lines top / bottom of the band frame the overlay.
+- **Spotify Canvas Style** — `showwaves` at full canvas height (was a 10 % strip) on a subtle dark gradient.
+
+Also in `engine/ffmpeg.py::generate_audio_template_preview`: the preview generator now feeds **30 s of audio** instead of 5 s before grabbing the last frame, so spectrum-based templates that scroll left-to-right have time to fill the canvas before the preview JPG is captured.
+
+15 / 15 audio-template preview tests + 295 / 295 regression probes + 99 / 99 e2e encode tests all pass. The Audio Visuals dropdown is wired to refresh the preview within 200 ms of each template switch so the user can flip through the 6 templates and watch them update live.
+
+---
+
 # Veloxa Video Editor — V14.3.2
 
 **Hot-fix.** Audio Visuals templates now render in the preview pane.

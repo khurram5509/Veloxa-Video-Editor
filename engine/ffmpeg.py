@@ -223,12 +223,14 @@ def generate_audio_template_preview(ffmpeg: str, audio_path: str,
     # Audio templates are spectrum/waveform driven. Their filters
     # ``showspectrum``, ``showcqt``, ``showwaves`` produce a stream
     # whose first frame is mostly blank — the spectrum / waveform
-    # buffer hasn't filled yet. To render a representative preview we
-    # feed ~3 s of audio and overwrite the same output file once per
-    # frame via ``-update 1``; the last frame written wins and shows
-    # the fully-developed visual.
+    # buffer hasn't filled yet, and time-axis spectrums scroll
+    # left-to-right at ~30 columns/s. To render a representative
+    # preview we feed ~30 s of audio (enough for a 900-pixel-wide
+    # spectrum to scroll across) and overwrite the same JPG once per
+    # frame via ``-update 1``; the last frame wins and shows the
+    # fully-developed visual that fills the canvas.
     pre_roll = 0.5
-    feed_dur = 5.0  # most spectrum templates scroll across in ~5 s
+    feed_dur = 30.0
     seek = max(0.0, time_s - pre_roll)
 
     cmd = [ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
@@ -244,7 +246,7 @@ def generate_audio_template_preview(ffmpeg: str, audio_path: str,
             # the filter chain finishes, ``out_path`` holds the last
             # (fully-developed) frame. ``-vsync vfr`` keeps PTS sane.
             "-update", "1", "-vsync", "vfr",
-            "-frames:v", "150",  # 5 s @ 30 fps
+            "-frames:v", "900",  # 30 s @ 30 fps
             "-q:v", "3", out_path]
     try:
         r = subprocess.run(cmd, capture_output=True,
