@@ -1629,26 +1629,58 @@ class MainWindow(QMainWindow):
             self._save_as_profile()
 
     def _build_menu_bar(self):
+        """V14.4.0: menu items are now grouped into proper submenus
+        (Tools / Help / Appearance). The previous V13–V14.3 layout
+        called ``mb.addAction()`` directly on the menu bar, which works
+        on Windows (flat action items render in the menubar) but NOT
+        on macOS — the macOS native menubar expects every top-level
+        entry to be a *menu*, not a flat action, and silently drops the
+        ones that aren't. That left macOS users with ONLY the
+        ``Appearance`` menu visible (the only one we used ``addMenu()``
+        for) and no way to reach ``Check for Updates…``, the help
+        docs, the log folder, or the watch-folder dialog.
+        """
         mb = self.menuBar()
+
+        # --- Tools menu (dialogs that operate on the app / queue) ---
+        tools = mb.addMenu("Tools")
+        for label, slot in [
+            ("Watch Folder…", self._open_watch_dialog),
+            ("Manage Saved Data…", self._open_manage_data_dialog),
+            ("Open Log Folder", self._open_log_folder),
+        ]:
+            act = QAction(label, self)
+            act.setMenuRole(QAction.MenuRole.NoRole)
+            act.triggered.connect(slot)
+            tools.addAction(act)
+
+        # --- Help menu (docs + update check) ---
+        help_menu = mb.addMenu("Help")
         for label, slot in [
             ("README", self._show_readme),
             ("Installation Guide", self._show_install_guide),
-            ("Help", self._show_help),
+            ("User Guide", self._show_help),
             ("License", self._show_license),
-            ("Watch Folder...", self._open_watch_dialog),
-            ("Manage Saved Data...", self._open_manage_data_dialog),
-            ("Open Log Folder", self._open_log_folder),
-            # V13.0: manual update trigger. Always available regardless of
-            # the "auto check on startup" setting.
-            ("Check for Updates...", self._check_for_updates_manual),
         ]:
             act = QAction(label, self)
+            act.setMenuRole(QAction.MenuRole.NoRole)
             act.triggered.connect(slot)
-            mb.addAction(act)
+            help_menu.addAction(act)
+        help_menu.addSeparator()
+        # V14.4.0: ``Check for Updates…`` — explicitly NoRole so Qt's
+        # ``TextHeuristicRole`` doesn't auto-move it to the macOS Apple
+        # menu (where the user can't find it). Stays in Help on both
+        # platforms now.
+        check_updates_act = QAction("Check for Updates…", self)
+        check_updates_act.setMenuRole(QAction.MenuRole.NoRole)
+        check_updates_act.triggered.connect(self._check_for_updates_manual)
+        help_menu.addAction(check_updates_act)
 
-        # V13.1: Appearance submenu — System / Light / Dark. Wrapped in
-        # a QActionGroup so the choices are mutually exclusive radio
-        # items. Default reads from QSettings (falls back to "system").
+        # --- Appearance menu (theme picker) ---
+        # V13.1: System / Light / Dark / OLED — wrapped in a
+        # QActionGroup so the choices behave as mutually-exclusive
+        # radio items. Default reads from QSettings (falls back to
+        # "system" when no choice has been persisted yet).
         appearance = mb.addMenu("Appearance")
         self._theme_group = QActionGroup(self)
         self._theme_group.setExclusive(True)
@@ -1656,12 +1688,13 @@ class MainWindow(QMainWindow):
         if current_mode not in THEME_MODES:
             current_mode = THEME_SYSTEM
         for mode, label in [
-            (THEME_SYSTEM, "System (follow Windows)"),
+            (THEME_SYSTEM, "System (follow OS)"),
             (THEME_LIGHT,  "Light"),
             (THEME_DARK,   "Dark"),
             (THEME_OLED,   "OLED Dark (pure black)"),
         ]:
             act = QAction(label, self, checkable=True)
+            act.setMenuRole(QAction.MenuRole.NoRole)
             act.setData(mode)
             act.setChecked(mode == current_mode)
             act.triggered.connect(

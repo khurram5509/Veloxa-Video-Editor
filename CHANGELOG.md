@@ -1,3 +1,52 @@
+# Veloxa Video Editor — V14.4.0
+
+**Feature / hot-fix.** macOS menubar now shows **Tools / Help / Appearance** — previously only Appearance was visible, leaving no way to reach the update checker, the logs, the watch folder, or the docs.
+
+## What was broken (your report)
+
+> *"In MAC top bar are not complete is should be same appearance option only, on mac its not showing the auto update option and to update"*
+
+On macOS the app's menubar at the top of the screen only had ``Appearance``. ``Check for Updates…``, ``README``, ``Installation Guide``, ``User Guide``, ``License``, ``Watch Folder…``, ``Manage Saved Data…``, and ``Open Log Folder`` were all silently dropped — you had no way to reach them from the menubar. On Windows the same items rendered fine, so the bug only showed on Mac.
+
+## Root cause
+
+The V13–V14.3 menubar code used ``mb.addAction(act)`` to put each of those entries directly on the menu bar as a flat action. On Windows that renders as a clickable menubar item. **On macOS the native menubar silently drops top-level QAction items** — only proper ``QMenu`` submenus (added via ``mb.addMenu(name)``) are shown. ``Appearance`` was the only menu we built that way, which is why it was the only thing the macOS menubar displayed.
+
+There was a second, related landmine: if Qt did display a flat action whose text matches a macOS reserved name (``About``, ``Quit``, ``Preferences``, ``Check for Updates``, etc.) it auto-moves the item into the *Apple menu* (top-left of the screen, easy to miss) via Qt's ``TextHeuristicRole``.
+
+## Fix
+
+`app/main_window.py::_build_menu_bar` — restructured into three proper submenus, with every action's ``MenuRole`` explicitly set to ``NoRole`` so Qt's auto-move can't relocate them on macOS:
+
+| Menu | Contents |
+|---|---|
+| **Tools** | Watch Folder… · Manage Saved Data… · Open Log Folder |
+| **Help** | README · Installation Guide · User Guide · License · ─── · **Check for Updates…** |
+| **Appearance** | System (follow OS) · Light · Dark · OLED Dark (pure black) |
+
+Same wire-up on both platforms — Windows users see the same three-menu structure, and the items they were finding under the old flat layout are all still there, just one click deeper.
+
+## Notable detail: ``Check for Updates…``
+
+Explicit ``MenuRole.NoRole`` keeps the item in the **Help** menu on macOS. Without it, Qt's ``TextHeuristicRole`` would have auto-moved it into the *Apple menu* (under ``Veloxa Video Editor → Check for Updates…``), which is more native macOS-y but easy to overlook. Help → Check for Updates is the place every user already expects.
+
+Also relabeled ``System (follow Windows)`` → ``System (follow OS)`` in the Appearance menu since the app is now cross-platform.
+
+## Tests
+
+352 / 352 main regression probes pass (11 new V14.4.0 probes verify the three submenus, that every menu item uses ``MenuRole.NoRole``, that ``Check for Updates`` lives in Help, that no flat ``mb.addAction`` survives, and that every previous menu entry has a home in the new structure).
+
+24 / 24 auto-assign probes still green. EXE smoke launch on Windows: clean.
+
+## Downloads
+
+- **Windows:** ``Veloxa-Video-Editor-V14.4.0-Setup.exe`` (271 MB, --onedir)
+- **macOS:** ``Veloxa-Video-Editor-V14.4.0-macOS.dmg`` (~88 MB, ad-hoc signed)
+
+Existing V14.3.x users will be offered V14.4.0 via Help → Check for Updates… — Mac users get the .dmg, Windows users get the .exe (per V14.3.4 routing guarantee).
+
+---
+
 # Veloxa Video Editor — V14.3.9
 
 **Hot-fix.** Audio rows no longer show **"(visual needed)"** when an Audio Visuals template is selected.
