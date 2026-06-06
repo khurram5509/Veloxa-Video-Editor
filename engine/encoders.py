@@ -1,10 +1,13 @@
 """Encoder catalogue, runtime detection (cached), and codec/audio CLI args."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import platform
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 from .ffmpeg import CREATE_NO_WINDOW
@@ -148,7 +151,38 @@ ENCODER_PRESETS = {
 
 # Bumped any time the detection probe changes (resolution, args, etc.) so
 # poisoned caches from earlier builds are ignored automatically.
-ENCODER_CACHE_SCHEMA = 2
+# V14.4.1: schema bumped to 3 — cache key now includes a machine ID
+# (hostname + MAC) so a cache that travels with a synced %APPDATA% / OneDrive
+# / roaming-profile setup won't apply on a different physical PC. Without
+# this, a user with NVENC detected on their workstation would inherit
+# h264_nvenc as "available" on their AMD laptop, then watch every encode
+# fail with "Cannot load nvcuda.dll". V3 caches that ship with V14.4.1+
+# are ignored on a different PC because the machine ID won't match.
+ENCODER_CACHE_SCHEMA = 3
+
+
+def _machine_id() -> str:
+    """V14.4.1: short stable ID for the physical machine running the app.
+
+    Combines the OS hostname and the first MAC address (via ``uuid.getnode``)
+    and hashes the result so the on-disk cache file doesn't expose either
+    raw. Same physical PC → same ID. A different PC → a different ID, so
+    a cache that travelled along with a synced ``%APPDATA%`` is invalidated.
+    """
+    bits = []
+    try:
+        bits.append(platform.node() or "")
+    except Exception:
+        pass
+    try:
+        # uuid.getnode() returns the MAC of the first NIC, or a random
+        # 48-bit int if it can't read one. Either is fine — both are
+        # stable per boot on a given machine.
+        bits.append(f"{uuid.getnode():012x}")
+    except Exception:
+        pass
+    raw = "|".join(bits) or "unknown-machine"
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
 
 
 def _cache_path() -> Path:
@@ -187,22 +221,37 @@ def _test_encoder(ffmpeg: str, name: str) -> bool:
         return False
 
 
-def detect_available_encoders(ffmpeg: str):
+def detect_available_encoders(ffmpeg: str, force_rescan: bool = False):
     """Return an ordered list of encoder names that work on this system.
 
-    Cached by FFmpeg version string at ``%APPDATA%\\Veloxa-VD\\encoder_cache.json``
-    so repeat launches are instant.
+    GPU encoders (NVENC / QSV / AMF on Windows, VideoToolbox on macOS) are
+    probed by running a real FFmpeg encode at 320×240 against each
+    candidate. Anything that returns exit code 0 is added to the list;
+    everything else is dropped. CPU encoders (libx264 / libx265) always
+    work and lead the list.
+
+    Cached at ``%APPDATA%\\Veloxa-VD\\encoder_cache.json`` so repeat
+    launches are instant. The cache key is the FFmpeg version string
+    PLUS a machine ID (V14.4.1+) so a cache that travels with a
+    synced %APPDATA% or OneDrive setup is automatically invalidated
+    on a different physical PC.
+
+    ``force_rescan=True`` ignores the cache and writes a fresh result —
+    use this when the user clicks "Re-detect GPU encoders" or when the
+    GPU has changed on the same physical machine.
     """
     if not ffmpeg:
         return list(CPU_ENCODERS)
 
     version = _ffmpeg_version(ffmpeg)
+    machine = _machine_id()
     cache_file = _cache_path()
-    if version:
+    if version and not force_rescan:
         try:
             if cache_file.exists():
                 data = json.loads(cache_file.read_text())
                 if (data.get("version") == version
+                        and data.get("machine") == machine
                         and data.get("schema") == ENCODER_CACHE_SCHEMA):
                     encoders = data.get("encoders")
                     if isinstance(encoders, list) and encoders:
@@ -219,6 +268,7 @@ def detect_available_encoders(ffmpeg: str):
         try:
             cache_file.write_text(json.dumps({
                 "version": version,
+                "machine": machine,
                 "schema": ENCODER_CACHE_SCHEMA,
                 "encoders": available,
             }))

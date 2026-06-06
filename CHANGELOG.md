@@ -1,3 +1,63 @@
+# Veloxa Video Editor — V14.4.1
+
+**Feature.** GPU encoders are explicitly **detected per physical PC**, with a visible status line and a Tools menu item to force a re-probe.
+
+## What this confirms (and what's new)
+
+> *"If the GPU is there can you use the GPU for fast processing? Not for one machine — detect the GPU and act accordingly if it's installed to some other PC."*
+
+GPU acceleration has been working since V12.x. The detection has always been runtime — at every launch the app spawns a real FFmpeg encode against each GPU encoder candidate (`h264_nvenc`, `hevc_nvenc`, `h264_amf`, `hevc_amf`, `h264_qsv`, `hevc_qsv`) and only keeps the ones that return exit code 0 on **this** machine. Nothing about your GPU is baked into the build.
+
+The `(auto)` encoder option picks the fastest available in this order:
+
+| Priority | Encoder | Vendor |
+|---|---|---|
+| 1 | `h264_nvenc` / `hevc_nvenc` | NVIDIA NVENC |
+| 2 | `h264_amf` / `hevc_amf` | AMD AMF |
+| 3 | `h264_qsv` / `hevc_qsv` | Intel QSV |
+| 4 (fallback) | `libx264` / `libx265` | CPU |
+
+So an install on a workstation with a GeForce RTX picks NVENC, the same installer on a Ryzen-only laptop picks AMF, an Intel ultrabook picks QSV, and a NUC with no GPU drops to CPU — without any user action.
+
+## What's new in V14.4.1
+
+### 1. Cache is now machine-keyed
+
+The runtime probe is cached at `%APPDATA%\Veloxa-VD\encoder_cache.json` so repeat launches are instant. Up through V14.4.0 the cache key was the FFmpeg version string only — meaning if your `%APPDATA%` was synced across PCs via OneDrive, a roaming profile, or a manual `xcopy`, an NVENC-detected cache would silently apply on a different AMD-only machine and every encode would fail.
+
+V14.4.1 adds a **machine ID** (a hash of hostname + first MAC address, via `platform.node()` + `uuid.getnode()`) to the cache key. The schema bumped to **3**, so any existing cache from V14.3.x / V14.4.0 is ignored automatically — every PC re-runs detection once on first launch.
+
+### 2. Status bar shows what was detected
+
+On every launch the status bar (bottom of the window) now reads one of:
+
+- `GPU acceleration: NVIDIA NVENC (auto-detected). Settings → Output → Encoder lets you override.`
+- `GPU acceleration: AMD AMF · Intel QSV (auto-detected). Settings → Output → Encoder lets you override.`
+- `No GPU encoder detected on this PC — encoding will use CPU (libx264 / libx265). Tools → Re-detect GPU encoders to rerun the probe.`
+
+…so you can see at a glance what's active without opening Settings.
+
+### 3. Tools → Re-detect GPU encoders
+
+A new menu item under **Tools** that bypasses the cache (`force_rescan=True`), reruns the probe, refreshes the encoder dropdown, and shows a summary dialog with the result. Use it when:
+
+- You just installed or updated GPU drivers and want the app to pick up new hardware capabilities
+- You swapped GPUs on the same physical PC
+- The encoder dropdown looks wrong (e.g. NVENC isn't listed even though you have a GeForce card)
+
+## Tests
+
+365 / 365 main regression probes pass (13 new V14.4.1 probes verify the schema bump, the machine-ID helper, that the cache reads / writes the new field, that detect_available_encoders accepts the new `force_rescan` kwarg, the Tools menu wiring, the status-bar GPU summary, and that the function still degrades gracefully when FFmpeg is missing).
+
+Behavioural check on the build PC: `detect_available_encoders` correctly probed and returned `libx264, libx265, h264_nvenc, hevc_nvenc`.
+
+## Downloads
+
+- **Windows:** `Veloxa-Video-Editor-V14.4.1-Setup.exe` (271 MB, --onedir)
+- **macOS:** `Veloxa-Video-Editor-V14.4.1-macOS.dmg` (~88 MB, ad-hoc signed; uses Apple `VideoToolbox` when the hardware supports it via FFmpeg's existing probe path)
+
+---
+
 # Veloxa Video Editor — V14.4.0
 
 **Feature / hot-fix.** macOS menubar now shows **Tools / Help / Appearance** — previously only Appearance was visible, leaving no way to reach the update checker, the logs, the watch folder, or the docs.

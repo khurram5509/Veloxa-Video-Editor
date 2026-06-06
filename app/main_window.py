@@ -257,6 +257,16 @@ class MainWindow(QMainWindow):
                 "Place ffmpeg.exe and ffprobe.exe in the 'ffmpeg' folder next "
                 "to the app, or install FFmpeg and add it to your PATH.")
 
+        # V14.4.1: surface the detected GPU(s) in the status bar so the
+        # user can SEE what hardware acceleration is active on this PC
+        # without digging through Settings → Output. The detection runs
+        # at startup against this physical machine — never baked into
+        # the build — so the message is always machine-specific.
+        try:
+            self.status_lbl.setText(self._describe_gpu_status())
+        except Exception:
+            pass
+
         # V13.0: GitHub-Releases auto-update. ``auto_update_check`` is
         # ON by default; the user can disable from the "Update available"
         # dialog. The check runs on a QThread so a slow / unreachable
@@ -599,6 +609,71 @@ class MainWindow(QMainWindow):
         tabs.addTab(self._wrap_in_scroll(self._build_output_tab()),
                     "Output")
         return tabs
+
+    def _describe_gpu_status(self) -> str:
+        """V14.4.1: short, human-friendly summary of which GPU encoders
+        were detected on this physical PC. Goes into the status bar on
+        startup so the user knows what hardware acceleration is active
+        without opening Settings → Output → Encoder.
+        """
+        gpus: list = []
+        # Look at the detected encoder list (already runtime-probed
+        # against the actual GPU on this machine).
+        avail = set(getattr(self, "available_encoders", None) or [])
+        # NVIDIA / AMD / Intel — by encoder family.
+        if "h264_nvenc" in avail or "hevc_nvenc" in avail:
+            gpus.append("NVIDIA NVENC")
+        if "h264_amf" in avail or "hevc_amf" in avail:
+            gpus.append("AMD AMF")
+        if "h264_qsv" in avail or "hevc_qsv" in avail:
+            gpus.append("Intel QSV")
+        if gpus:
+            return ("GPU acceleration: " + " · ".join(gpus)
+                    + " (auto-detected). "
+                      "Settings → Output → Encoder lets you override.")
+        return ("No GPU encoder detected on this PC — encoding will use "
+                "CPU (libx264 / libx265). "
+                "Tools → Re-detect GPU encoders to rerun the probe.")
+
+    def _redetect_gpu_encoders(self):
+        """V14.4.1: force a fresh GPU-encoder probe and update the UI.
+
+        The detection cache (``%APPDATA%\\Veloxa-VD\\encoder_cache.json``,
+        keyed by FFmpeg version + machine ID) is bypassed via
+        ``force_rescan=True``, then re-written with the new result. The
+        encoder dropdown is refreshed so any newly-available GPU
+        encoders appear immediately, and the user sees a summary
+        dialog with the result.
+        """
+        if not self.ffmpeg:
+            QMessageBox.information(
+                self, "Re-detect GPU encoders",
+                "FFmpeg isn't available — nothing to probe.")
+            return
+        self.status_lbl.setText("Re-detecting GPU encoders…")
+        QApplication.processEvents()
+        try:
+            self.available_encoders = detect_available_encoders(
+                self.ffmpeg, force_rescan=True)
+            log.info("Re-detected encoders: %s", self.available_encoders)
+        except Exception as exc:
+            log.warning("Re-detect failed: %s", exc)
+            QMessageBox.warning(
+                self, "Re-detect GPU encoders",
+                f"GPU re-detection failed:\n\n{exc}")
+            return
+        try:
+            self._refresh_encoder_combo()
+        except Exception:
+            pass
+        # Friendly summary in a dialog.
+        summary = self._describe_gpu_status()
+        # Also list every concrete encoder that survived the probe.
+        listed = ", ".join(self.available_encoders) or "(none)"
+        QMessageBox.information(
+            self, "GPU encoders re-detected",
+            f"{summary}\n\nFull list:\n{listed}")
+        self.status_lbl.setText(summary)
 
     def _wrap_in_scroll(self, content: QWidget) -> QScrollArea:
         """V14.3.8: wrap a tab's content widget in a vertically-scrolling
@@ -1648,6 +1723,15 @@ class MainWindow(QMainWindow):
             ("Watch Folder…", self._open_watch_dialog),
             ("Manage Saved Data…", self._open_manage_data_dialog),
             ("Open Log Folder", self._open_log_folder),
+            # V14.4.1: force a fresh GPU-encoder probe. The encoders are
+            # detected at app launch via an FFmpeg probe and cached at
+            # %APPDATA%\Veloxa-VD\encoder_cache.json keyed by FFmpeg
+            # version AND machine ID. This menu item lets the user
+            # invalidate the cache and rerun the probe (useful if their
+            # GPU driver was just installed / updated after the app's
+            # first launch, or if they swapped GPUs).
+            ("Re-detect GPU encoders…",
+             self._redetect_gpu_encoders),
         ]:
             act = QAction(label, self)
             act.setMenuRole(QAction.MenuRole.NoRole)

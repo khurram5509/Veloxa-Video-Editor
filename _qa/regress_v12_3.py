@@ -618,7 +618,7 @@ from app.updater import (
 )
 
 # Version is correctly bumped.
-check("APP_VERSION = '14.4.0'", _APP_VERSION == "14.4.0",
+check("APP_VERSION = '14.4.1'", _APP_VERSION == "14.4.1",
       f"got {_APP_VERSION!r}")
 check("GITHUB_REPO is khurram5509/Veloxa-Video-Editor",
       _u.GITHUB_REPO == "khurram5509/Veloxa-Video-Editor",
@@ -642,7 +642,7 @@ check("'v' prefix tolerated either side",
       _vc("v13.0", "V13.0") == 0)
 
 # is_newer convenience.
-check("is_newer('14.4.0', '13.0')", _newer("14.4.0", "13.0"))
+check("is_newer('14.4.1', '13.0')", _newer("14.4.1", "13.0"))
 check("not is_newer('12.9.99', '13.0')",
       not _newer("12.9.99", "13.0"))
 check("not is_newer('13.0', '13.0')",
@@ -700,7 +700,7 @@ check("main_window imports UpdateChecker + helpers",
       and "UpdateChecker" in mw_src and "DownloadWorker" in mw_src
       and "launch_installer_and_quit" in mw_src)
 check("Help menu has 'Check for Updates' item",
-      # V14.4.0: ellipsis switched from '...' to '…' (single codepoint)
+      # V14.4.1: ellipsis switched from '...' to '…' (single codepoint)
       # when the items moved into the Help submenu. Accept either form.
       ('"Check for Updates..."' in mw_src
        or '"Check for Updates…"' in mw_src)
@@ -728,16 +728,16 @@ check("docs.py advertises auto-update feature",
 
 # Installer.iss + build.ps1 carry the new version.
 iss_src = open(ROOT / "installer.iss", encoding="utf-8").read()
-check("installer.iss AppVersion = 14.4.0", '"14.4.0"' in iss_src)
-check("installer.iss EXE name = V14.4.0.exe",
-      "Veloxa-Video-Editor-V14.4.0.exe" in iss_src)
+check("installer.iss AppVersion = 14.4.1", '"14.4.1"' in iss_src)
+check("installer.iss EXE name = V14.4.1.exe",
+      "Veloxa-Video-Editor-V14.4.1.exe" in iss_src)
 check("installer.iss preserves stable AppId across V12 -> V13",
       "F2E1A8C4-1E5B-4C9A-9B27-VELOXA-VID-V121" in iss_src)
 ps1_src = open(ROOT / "build.ps1", encoding="utf-8").read()
-check("build.ps1 builds V14.4.0 EXE",
-      "Veloxa-Video-Editor-V14.4.0" in ps1_src)
+check("build.ps1 builds V14.4.1 EXE",
+      "Veloxa-Video-Editor-V14.4.1" in ps1_src)
 
-# V14.4.0 crash-fix: stale C++-object guard in _start_update_check.
+# V14.4.1 crash-fix: stale C++-object guard in _start_update_check.
 mw_src2 = open(ROOT / "app" / "main_window.py", encoding="utf-8").read()
 check("_start_update_check guards RuntimeError on stale wrapper",
       "except RuntimeError" in mw_src2
@@ -747,9 +747,9 @@ check("_on_update_checker_finished clears the Python ref",
 
 
 # ===========================================================================
-# 13. V14.4.0: System / Light / Dark theme switcher
+# 13. V14.4.1: System / Light / Dark theme switcher
 # ===========================================================================
-section("V14.4.0: theme switcher")
+section("V14.4.1: theme switcher")
 
 from app.theme import (
     DARK_QSS, LIGHT_QSS,
@@ -772,7 +772,7 @@ check("DARK_QSS and LIGHT_QSS differ (not a copy/paste)",
 check("dark theme uses brand orange",  "#f58220" in DARK_QSS)
 check("light theme uses brand orange", "#f58220" in LIGHT_QSS)
 
-# V14.4.0: light theme redesign — depth + hierarchy.
+# V14.4.1: light theme redesign — depth + hierarchy.
 check("light theme uses qlineargradient for button/input depth",
       "qlineargradient" in LIGHT_QSS)
 check("light theme uses tinted off-white main bg (cards stand out)",
@@ -805,7 +805,7 @@ check("main_window imports theme switcher symbols",
       and "THEME_SYSTEM" in mw_src3)
 check("Appearance submenu added to menu bar",
       'mb.addMenu("Appearance")' in mw_src3
-      # V14.4.0: label changed from 'System (follow Windows)' to
+      # V14.4.1: label changed from 'System (follow Windows)' to
       # 'System (follow OS)' when the macOS menubar fix landed.
       and ("System (follow Windows)" in mw_src3
            or "System (follow OS)" in mw_src3)
@@ -860,7 +860,7 @@ for k in AUDIO_TEMPLATE_ORDER:
           and lbl == "[vout]" and "[aout]" in fc,
           f"label={lbl!r}, fc[:60]={fc[:60]!r}")
 
-# V14.4.0: actually run each template's filter graph through FFmpeg
+# V14.4.1: actually run each template's filter graph through FFmpeg
 # (against a silent lavfi audio source) so any "Option not found" /
 # syntax errors fail loudly rather than at the user's encode time.
 import subprocess as _sp
@@ -918,9 +918,9 @@ check("profile_opts passes audio_template through",
 
 
 # ===========================================================================
-# 15. V14.4.0: updater download runs on a QThread (no more GUI freeze)
+# 15. V14.4.1: updater download runs on a QThread (no more GUI freeze)
 # ===========================================================================
-section("V14.4.0: updater download worker")
+section("V14.4.1: updater download worker")
 
 from app.updater import DownloadWorker as _DW
 import inspect as _inspectV14
@@ -939,7 +939,7 @@ check("DownloadWorker passes a cancel callback",
 # download_installer uses 1 MB chunks.
 import app.updater as _upd
 _di_src = _inspectV14.getsource(_upd.download_installer)
-check("download_installer chunk size = 64 KB (V14.4.0 perf fix)",
+check("download_installer chunk size = 64 KB (V14.4.1 perf fix)",
       "chunk_size = 64 * 1024" in _di_src,
       "V14.0.1 incorrectly bumped to 1 MB and tanked throughput")
 
@@ -959,9 +959,9 @@ check("Progress bar uses 0..1000 range for sub-percent granularity",
 
 
 # ===========================================================================
-# 16. V14.4.0: preview overlay clears + installer no longer side-by-side
+# 16. V14.4.1: preview overlay clears + installer no longer side-by-side
 # ===========================================================================
-section("V14.4.0: preview clear + installer overwrite")
+section("V14.4.1: preview clear + installer overwrite")
 
 mw_v142 = open(ROOT / "app" / "main_window.py", encoding="utf-8").read()
 
@@ -999,9 +999,9 @@ check("installer sets VersionInfo* so Setup EXE icon shows",
 
 
 # ===========================================================================
-# 17. V14.4.0: Single instance + HiDPI + responsive hardening
+# 17. V14.4.1: Single instance + HiDPI + responsive hardening
 # ===========================================================================
-section("V14.4.0: single-instance, HiDPI, min size")
+section("V14.4.1: single-instance, HiDPI, min size")
 
 # Single-instance module exists and exposes the public API.
 from app import single_instance as _si
@@ -1042,9 +1042,9 @@ check("MainWindow still calls saveGeometry on close",
 
 
 # ===========================================================================
-# 18. V14.4.0: single-instance ACK handshake + dynamic version log
+# 18. V14.4.1: single-instance ACK handshake + dynamic version log
 # ===========================================================================
-section("V14.4.0: single-instance ACK + dynamic persistence version")
+section("V14.4.1: single-instance ACK + dynamic persistence version")
 
 si_src = inspect.getsource(_si)
 check("single_instance defines ACK_MAGIC",
@@ -1065,9 +1065,9 @@ check("persistence.py reads APP_VERSION dynamically (no V13.0 hardcode)",
 
 
 # ===========================================================================
-# 19. V14.4.0: macOS source-level support + GitHub Actions
+# 19. V14.4.1: macOS source-level support + GitHub Actions
 # ===========================================================================
-section("V14.4.0: cross-platform foundation")
+section("V14.4.1: cross-platform foundation")
 
 from app import platform_compat as _pc
 check("platform_compat exposes IS_WIN / IS_MAC / IS_LINUX",
@@ -1078,8 +1078,8 @@ check("platform_tag returns 'windows' on Windows host",
 
 # Asset picker honours platform: Windows host should still pick .exe.
 mac_assets = [
-    {"name": "Veloxa-Video-Editor-V14.4.0-Setup.exe"},
-    {"name": "Veloxa-Video-Editor-V14.4.0-macOS.dmg"},
+    {"name": "Veloxa-Video-Editor-V14.4.1-Setup.exe"},
+    {"name": "Veloxa-Video-Editor-V14.4.1-macOS.dmg"},
 ]
 picked = _pc.pick_release_asset(mac_assets)
 if _pc.IS_WIN:
@@ -1139,9 +1139,9 @@ check("Workflow uploads .dmg to the matching release",
 
 
 # ===========================================================================
-# V14.4.0 — Parallel CPU encoder slot + add-files-while-batch-runs
+# V14.4.1 — Parallel CPU encoder slot + add-files-while-batch-runs
 # ===========================================================================
-section("V14.4.0 — CPU/GPU parallel slot + safety + queue-add")
+section("V14.4.1 — CPU/GPU parallel slot + safety + queue-add")
 
 # ---- engine/system_resources.py contract --------------------------------
 from engine import system_resources as _sr
@@ -1241,9 +1241,9 @@ check("requirements.txt includes psutil>=5.9",
 
 
 # ===========================================================================
-# V14.4.0 — first-video-stuck-at-0% progress fix
+# V14.4.1 — first-video-stuck-at-0% progress fix
 # ===========================================================================
-section("V14.4.0 — progress emission fix")
+section("V14.4.1 — progress emission fix")
 
 # Re-read engine/batch.py for these checks.
 _batch_src_143 = (ROOT / "engine" / "batch.py").read_text(encoding="utf-8")
@@ -1285,9 +1285,9 @@ check("_run_ffmpeg decodes stderr bytes",
 
 
 # ===========================================================================
-# V14.4.0 — audio-template preview pane fix
+# V14.4.1 — audio-template preview pane fix
 # ===========================================================================
-section("V14.4.0 — audio-template preview pane")
+section("V14.4.1 — audio-template preview pane")
 
 # 1) The new generator exists at the engine level.
 from engine import (
@@ -1324,9 +1324,9 @@ check("generate_audio_template_preview uses -update 1 for last-frame win",
 
 
 # ===========================================================================
-# V14.4.0 — platform-asset routing must never mix .exe and .dmg
+# V14.4.1 — platform-asset routing must never mix .exe and .dmg
 # ===========================================================================
-section("V14.4.0 — Win → .exe only / Mac → .dmg only (no mixing)")
+section("V14.4.1 — Win → .exe only / Mac → .dmg only (no mixing)")
 
 # Monkey-patch IS_WIN / IS_MAC to verify both branches lock in correctly.
 import app.platform_compat as _pc_routing
@@ -1335,9 +1335,9 @@ _SAVED_MAC = _pc_routing.IS_MAC
 _SAVED_LINUX = _pc_routing.IS_LINUX
 
 _release_v143 = [
-    {"name": "Veloxa-Video-Editor-V14.4.0-Setup.exe",
+    {"name": "Veloxa-Video-Editor-V14.4.1-Setup.exe",
      "browser_download_url": "https://x/win.exe", "size": 100},
-    {"name": "Veloxa-Video-Editor-V14.4.0-macOS.dmg",
+    {"name": "Veloxa-Video-Editor-V14.4.1-macOS.dmg",
      "browser_download_url": "https://x/mac.dmg", "size": 100},
 ]
 try:
@@ -1351,7 +1351,7 @@ try:
           _win_pick and not _win_pick["name"].endswith(".dmg"))
     # When ONLY a .dmg is present, Win refuses (returns None).
     _win_only_dmg = _pc_routing.pick_release_asset(
-        [{"name": "Veloxa-V14.4.0-macOS.dmg",
+        [{"name": "Veloxa-V14.4.1-macOS.dmg",
           "browser_download_url": "https://x/m.dmg", "size": 1}])
     check("Win branch refuses .dmg as fallback (returns None)",
           _win_only_dmg is None)
@@ -1366,7 +1366,7 @@ try:
           _mac_pick and not _mac_pick["name"].endswith(".exe"))
     # When ONLY an .exe is present, Mac refuses (returns None).
     _mac_only_exe = _pc_routing.pick_release_asset(
-        [{"name": "Veloxa-V14.4.0-Setup.exe",
+        [{"name": "Veloxa-V14.4.1-Setup.exe",
           "browser_download_url": "https://x/w.exe", "size": 1}])
     check("Mac branch refuses .exe as fallback (returns None)",
           _mac_only_exe is None)
@@ -1388,9 +1388,9 @@ check("check_for_updates log message is platform-agnostic",
 
 
 # ===========================================================================
-# V14.4.0 — auto-assign audio visuals at add-to-queue time
+# V14.4.1 — auto-assign audio visuals at add-to-queue time
 # ===========================================================================
-section("V14.4.0 — auto-assign audio visuals on add")
+section("V14.4.1 — auto-assign audio visuals on add")
 
 # Source-level checks (running the full MainWindow blocks on single-
 # instance + startup update poll, so we don't instantiate it in the
@@ -1440,9 +1440,9 @@ check("_build_jobs has 'already_has_visual' guard",
 
 
 # ===========================================================================
-# V14.4.0 — light-theme queue-row text was invisible (white-on-white)
+# V14.4.1 — light-theme queue-row text was invisible (white-on-white)
 # ===========================================================================
-section("V14.4.0 — light theme: queue-row labels must be readable")
+section("V14.4.1 — light theme: queue-row labels must be readable")
 
 # 1) Both QSS files now carry an explicit QLabel[role="queue-row-label"]
 #    rule with theme-appropriate colours.
@@ -1484,10 +1484,10 @@ check("_apply_row_selection_styles re-polishes after property change",
 
 
 # ===========================================================================
-# V14.4.0 — build mode: --onedir (was --onefile, caused python314.dll
+# V14.4.1 — build mode: --onedir (was --onefile, caused python314.dll
 # LoadLibrary failures after Windows in-app updates)
 # ===========================================================================
-section("V14.4.0 — Windows build uses --onedir (no _MEI extract race)")
+section("V14.4.1 — Windows build uses --onedir (no _MEI extract race)")
 
 _build_ps1 = (ROOT / "build.ps1").read_text(encoding="utf-8")
 # Drop comment lines (start with # after any whitespace) before checking.
@@ -1513,9 +1513,9 @@ check("installer.iss still renames to unversioned EXE name",
 
 
 # ===========================================================================
-# V14.4.0 — settings tabs wrap in QScrollArea (macOS row-overlap fix)
+# V14.4.1 — settings tabs wrap in QScrollArea (macOS row-overlap fix)
 # ===========================================================================
-section("V14.4.0 — settings tabs scroll instead of overlapping on macOS")
+section("V14.4.1 — settings tabs scroll instead of overlapping on macOS")
 
 _mw_src_148 = (ROOT / "app" / "main_window.py").read_text(encoding="utf-8")
 check("QScrollArea imported in app/main_window.py",
@@ -1547,9 +1547,9 @@ check("QSS has QScrollBar:vertical styling (light + dark = 2 rules)",
 
 
 # ===========================================================================
-# V14.4.0 — audio row label respects active audio template
+# V14.4.1 — audio row label respects active audio template
 # ===========================================================================
-section("V14.4.0 — audio row label: template-active stops showing "
+section("V14.4.1 — audio row label: template-active stops showing "
         "'(visual needed)'")
 
 _mw_src_149 = (ROOT / "app" / "main_window.py").read_text(encoding="utf-8")
@@ -1586,13 +1586,13 @@ check("Auto-assign logs the 'list has 0 usable entries' no-op reason",
 
 
 # ===========================================================================
-# V14.4.0 — macOS menubar fix: every top-level entry is a real menu
+# V14.4.1 — macOS menubar fix: every top-level entry is a real menu
 # ===========================================================================
-section("V14.4.0 — macOS menubar: Tools / Help / Appearance")
+section("V14.4.1 — macOS menubar: Tools / Help / Appearance")
 
 # macOS native QMenuBar silently DROPS top-level QActions added via
 # ``mb.addAction(...)``. Only proper submenus (``mb.addMenu(...)``) show
-# up. In V14.4.0 and earlier this left macOS users with ONLY the
+# up. In V14.4.1 and earlier this left macOS users with ONLY the
 # Appearance menu visible — no way to reach Check for Updates, the
 # logs, the watch folder, or any of the docs.
 _mb_src = _mw_src_149.split("def _build_menu_bar")[1].split("\n    def ")[0]
@@ -1640,6 +1640,61 @@ for label in ("Watch Folder", "Manage Saved Data", "Open Log Folder"):
 # least 4 (tools loop / help loop / check_updates / appearance loop).
 check("All menu items use MenuRole.NoRole (no auto-move on macOS)",
       _mb_code.count("setMenuRole(QAction.MenuRole.NoRole)") >= 4)
+
+
+# ===========================================================================
+# V14.4.1 — GPU detection is per-machine, cache key includes machine ID,
+#           Tools menu can force a re-detect, status bar shows the GPU
+# ===========================================================================
+section("V14.4.1 — GPU is auto-detected per physical PC, never baked")
+
+# 1) Cache key now includes a machine ID — a synced %APPDATA% / OneDrive
+#    cache file can't apply on a different PC.
+_enc_src = (ROOT / "engine" / "encoders.py").read_text(encoding="utf-8")
+check("encoders schema bumped to 3 (cache invalidated by V14.4.1)",
+      "ENCODER_CACHE_SCHEMA = 3" in _enc_src)
+check("_machine_id() helper exists",
+      "def _machine_id" in _enc_src)
+check("_machine_id mixes hostname (platform.node) + MAC (uuid.getnode)",
+      "platform.node()" in _enc_src and "uuid.getnode()" in _enc_src)
+check("detect_available_encoders writes machine ID into the cache",
+      '"machine": machine' in _enc_src)
+check("Cache hit requires the machine ID to match",
+      'data.get("machine") == machine' in _enc_src)
+check("detect_available_encoders accepts force_rescan kwarg",
+      "def detect_available_encoders(ffmpeg: str, force_rescan: bool"
+      in _enc_src)
+
+# 2) Tools menu includes "Re-detect GPU encoders…"
+_mw_src_141 = (ROOT / "app" / "main_window.py").read_text(encoding="utf-8")
+check("Tools menu has 'Re-detect GPU encoders…'",
+      "Re-detect GPU encoders" in _mw_src_141
+      and "_redetect_gpu_encoders" in _mw_src_141)
+# Helpers defined:
+check("MainWindow defines _describe_gpu_status",
+      "def _describe_gpu_status" in _mw_src_141)
+check("MainWindow defines _redetect_gpu_encoders",
+      "def _redetect_gpu_encoders" in _mw_src_141)
+# The redetect handler passes force_rescan=True so the cache is bypassed.
+_redetect_src = _mw_src_141.split(
+    "def _redetect_gpu_encoders")[1].split("\n    def ")[0]
+check("_redetect_gpu_encoders forces a rescan (cache bypassed)",
+      "force_rescan=True" in _redetect_src)
+check("_redetect_gpu_encoders refreshes the encoder combo after",
+      "_refresh_encoder_combo()" in _redetect_src)
+
+# 3) Status bar on startup shows the GPU summary.
+check("Startup status line shows _describe_gpu_status()",
+      "_describe_gpu_status()" in _mw_src_141.split(
+          "if not self.ffmpeg")[1].split("def ")[0])
+
+# 4) Behavioural smoke: detect_available_encoders WITHOUT ffmpeg still
+#    returns CPU encoders so the GUI never has a zero-option encoder
+#    combo on a missing-FFmpeg install.
+from engine.encoders import detect_available_encoders as _det, CPU_ENCODERS
+_no_ffmpeg = _det("")
+check("detect_available_encoders('') returns the CPU fallback",
+      sorted(_no_ffmpeg) == sorted(CPU_ENCODERS))
 
 
 # ===========================================================================
