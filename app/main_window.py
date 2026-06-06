@@ -2254,27 +2254,59 @@ class MainWindow(QMainWindow):
         out: dict = {}
         if not audio_paths:
             return out
-        # Template wins — no per-row visual needed.
+        # V14.3.9: log every reason auto-assign no-ops so the user can
+        # diagnose from the log file without source access. Was silent
+        # in V14.3.5–V14.3.8 — users reporting "auto-assign isn't
+        # working on Mac" had no way to see which gate blocked it.
         if self._has_audio_template_active():
+            log.info("Auto-assign: skipped (audio template active — "
+                     "the template synthesises the visual from the "
+                     "audio itself; no per-row visual needed)")
             return out
-        # Rotation checkbox is the user's opt-in switch.
         if not hasattr(self, "profile_visuals_enabled"):
+            log.info("Auto-assign: skipped (no profile_visuals_enabled "
+                     "checkbox in this build)")
             return out
         if not self.profile_visuals_enabled.isChecked():
+            log.info("Auto-assign: skipped (Audio Visuals tab's "
+                     "'Use these visuals for audio inputs (round-robin)' "
+                     "checkbox is OFF — tick it to enable auto-assign)")
+            return out
+        if not hasattr(self, "profile_visuals_list"):
+            log.info("Auto-assign: skipped (no profile_visuals_list in "
+                     "this build)")
             return out
         # Gather the list of usable visuals (path must exist on disk).
-        if not hasattr(self, "profile_visuals_list"):
-            return out
         pv_list = []
-        for i in range(self.profile_visuals_list.count()):
+        missing_paths: list = []
+        n_total = self.profile_visuals_list.count()
+        for i in range(n_total):
             it = self.profile_visuals_list.item(i)
             d = it.data(Qt.ItemDataRole.UserRole) or {}
             p = (d.get("path") or "").strip()
-            if not p or not os.path.exists(p):
+            if not p:
+                continue
+            # ``os.path.exists`` honours macOS sandbox + permission rules
+            # — if the user's Profile Visuals point at a Pictures /
+            # Music folder the app wasn't granted access to, the entry
+            # disappears here and we surface that in the log so the
+            # user can grant the permission or repick the visual.
+            if not os.path.exists(p):
+                missing_paths.append(p)
                 continue
             kind = (d.get("kind") or "image").lower()
             pv_list.append({"path": p, "kind": kind})
+        if missing_paths:
+            log.info("Auto-assign: %d Profile Visuals path(s) are "
+                     "missing on disk (skipped in rotation): %s",
+                     len(missing_paths),
+                     ", ".join(missing_paths[:3])
+                     + (f" (+{len(missing_paths) - 3} more)"
+                        if len(missing_paths) > 3 else ""))
         if not pv_list:
+            log.info("Auto-assign: skipped (Profile Visuals list has 0 "
+                     "usable entries — list size=%d, on-disk-missing=%d)",
+                     n_total, len(missing_paths))
             return out
         # Pick from the rotation, advancing the counter as we go. The
         # batch-start path consults the same counter; bumping it here
@@ -2487,12 +2519,26 @@ class MainWindow(QMainWindow):
         name = Path(d.src).name
         visual_tag = ""
         if d.kind == "audio":
-            if not d.visual_path:
-                visual_tag = "  (visual needed)"
-            elif d.visual_kind == "video":
-                visual_tag = "  +video-visual"
+            if d.visual_path:
+                if d.visual_kind == "video":
+                    visual_tag = "  +video-visual"
+                else:
+                    visual_tag = "  +image-visual"
+            elif self._has_audio_template_active():
+                # V14.3.9: when an audio template is selected (Spectrum
+                # Bars, Waveform, Neon Ring, etc.) the visual is
+                # synthesised from the audio itself at encode time — no
+                # per-row visual_path is needed. Previously the row label
+                # showed "(visual needed)" here, which read as broken
+                # configuration even though the encode would succeed.
+                try:
+                    tpl_name = (self.audio_template_combo.currentText()
+                                or "template")
+                except Exception:
+                    tpl_name = "template"
+                visual_tag = f"  +{tpl_name}"
             else:
-                visual_tag = "  +image-visual"
+                visual_tag = "  (visual needed)"
         # V11.5: filename label is rendered inside the per-row widget
         # (set via _install_row_widget). Update both the row's text (used
         # as a fallback / accessibility / drag preview) and the widget's

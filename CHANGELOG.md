@@ -1,3 +1,63 @@
+# Veloxa Video Editor — V14.3.9
+
+**Hot-fix.** Audio rows no longer show **"(visual needed)"** when an Audio Visuals template is selected.
+
+## What was broken (your report)
+
+User report (macOS): *"on MAC it's not selecting the visuals from the Audio Visual auto, it shows 'visual pending'"*.
+
+Symptom: even with an Audio Visuals template selected (Spectrum Bars, Waveform, Neon Audio Ring, Podcast Layout, Spotify Canvas, etc.), every audio row in the queue showed the **"(visual needed)"** tag — the same tag the queue uses to flag *"you forgot to assign a visual to this row"*. The encode actually worked correctly (the template synthesised the visual at encode time), but the label was lying.
+
+## Root cause
+
+In V14.3.5–V14.3.8 the audio-row label only knew about two states:
+
+| `d.visual_path` set? | Label suffix |
+|---|---|
+| Yes (image) | `+image-visual` |
+| Yes (video) | `+video-visual` |
+| No | `(visual needed)` |
+
+There was no third branch for *"no per-row visual is set, but an audio template is active so one is being synthesised from the audio"*. The auto-assign function in V14.3.5 correctly no-ops when a template is active (templates and per-row visuals are mutually exclusive by design — see the V14.3.5 decision matrix), and the modal prompt is also correctly skipped. But the row data ended up with `visual_path=None`, which the label code treated as a misconfiguration.
+
+## Fix
+
+`app/main_window.py::_refresh_item_label` — the label now branches on `_has_audio_template_active()` and shows the active template's display name when no per-row visual is set:
+
+| Per-row `visual_path` set? | Template active? | Label suffix |
+|---|---|---|
+| Yes (image) | — | `+image-visual` |
+| Yes (video) | — | `+video-visual` |
+| **No** | **Yes** | **`+Spectrum Bars`** *(or whichever template is picked)* |
+| No | No | `(visual needed)` |
+
+The fourth row is the only state that should ever read as a misconfiguration — and it now correctly does, since it only fires when the user has *neither* a per-row visual *nor* a template selected.
+
+## Bonus: diagnostic logging
+
+`_auto_assign_audio_visuals_for_new` now writes a log line for every gate it hits:
+
+- `Auto-assign: skipped (audio template active — ...)` — template selected, per-row rotation correctly bypassed
+- `Auto-assign: skipped ('Use these visuals for audio inputs (round-robin)' checkbox is OFF — tick it to enable auto-assign)`
+- `Auto-assign: %d Profile Visuals path(s) are missing on disk: ...` — paths in the list don't resolve on this machine (common when settings carry over from a different OS)
+- `Auto-assign: skipped (Profile Visuals list has 0 usable entries — list size=N, on-disk-missing=M)`
+- `Auto-assigned visuals to N new audio file(s) from profile 'P' (counter now C)` — success
+
+If auto-assign isn't working, the log file (Help → Open Log Folder) now spells out exactly which gate blocked it instead of being silent.
+
+## Tests
+
+- 341 / 341 main regression probes (7 new V14.3.9 probes verify the label branches on template state, keeps the "(visual needed)" fallback, uses the template's display name as the tag, and that each diagnostic log line is present).
+- 24 / 24 auto-assign behavioural probes still green.
+- EXE smoke launch on Windows: clean.
+
+## Downloads
+
+- **Windows:** `Veloxa-Video-Editor-V14.3.9-Setup.exe` (271 MB, --onedir)
+- **macOS:** `Veloxa-Video-Editor-V14.3.9-macOS.dmg` (~88 MB, ad-hoc signed)
+
+---
+
 # Veloxa Video Editor — V14.3.8
 
 **Hot-fix.** macOS — the Watermark / Audio Visuals / Output settings tabs no longer render with overlapping rows.

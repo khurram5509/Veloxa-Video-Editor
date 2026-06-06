@@ -618,7 +618,7 @@ from app.updater import (
 )
 
 # Version is correctly bumped.
-check("APP_VERSION = '14.3.8'", _APP_VERSION == "14.3.8",
+check("APP_VERSION = '14.3.9'", _APP_VERSION == "14.3.9",
       f"got {_APP_VERSION!r}")
 check("GITHUB_REPO is khurram5509/Veloxa-Video-Editor",
       _u.GITHUB_REPO == "khurram5509/Veloxa-Video-Editor",
@@ -642,7 +642,7 @@ check("'v' prefix tolerated either side",
       _vc("v13.0", "V13.0") == 0)
 
 # is_newer convenience.
-check("is_newer('14.3.8', '13.0')", _newer("14.3.8", "13.0"))
+check("is_newer('14.3.9', '13.0')", _newer("14.3.9", "13.0"))
 check("not is_newer('12.9.99', '13.0')",
       not _newer("12.9.99", "13.0"))
 check("not is_newer('13.0', '13.0')",
@@ -725,16 +725,16 @@ check("docs.py advertises auto-update feature",
 
 # Installer.iss + build.ps1 carry the new version.
 iss_src = open(ROOT / "installer.iss", encoding="utf-8").read()
-check("installer.iss AppVersion = 14.3.8", '"14.3.8"' in iss_src)
-check("installer.iss EXE name = V14.3.8.exe",
-      "Veloxa-Video-Editor-V14.3.8.exe" in iss_src)
+check("installer.iss AppVersion = 14.3.9", '"14.3.9"' in iss_src)
+check("installer.iss EXE name = V14.3.9.exe",
+      "Veloxa-Video-Editor-V14.3.9.exe" in iss_src)
 check("installer.iss preserves stable AppId across V12 -> V13",
       "F2E1A8C4-1E5B-4C9A-9B27-VELOXA-VID-V121" in iss_src)
 ps1_src = open(ROOT / "build.ps1", encoding="utf-8").read()
-check("build.ps1 builds V14.3.8 EXE",
-      "Veloxa-Video-Editor-V14.3.8" in ps1_src)
+check("build.ps1 builds V14.3.9 EXE",
+      "Veloxa-Video-Editor-V14.3.9" in ps1_src)
 
-# V14.3.8 crash-fix: stale C++-object guard in _start_update_check.
+# V14.3.9 crash-fix: stale C++-object guard in _start_update_check.
 mw_src2 = open(ROOT / "app" / "main_window.py", encoding="utf-8").read()
 check("_start_update_check guards RuntimeError on stale wrapper",
       "except RuntimeError" in mw_src2
@@ -744,9 +744,9 @@ check("_on_update_checker_finished clears the Python ref",
 
 
 # ===========================================================================
-# 13. V14.3.8: System / Light / Dark theme switcher
+# 13. V14.3.9: System / Light / Dark theme switcher
 # ===========================================================================
-section("V14.3.8: theme switcher")
+section("V14.3.9: theme switcher")
 
 from app.theme import (
     DARK_QSS, LIGHT_QSS,
@@ -769,7 +769,7 @@ check("DARK_QSS and LIGHT_QSS differ (not a copy/paste)",
 check("dark theme uses brand orange",  "#f58220" in DARK_QSS)
 check("light theme uses brand orange", "#f58220" in LIGHT_QSS)
 
-# V14.3.8: light theme redesign — depth + hierarchy.
+# V14.3.9: light theme redesign — depth + hierarchy.
 check("light theme uses qlineargradient for button/input depth",
       "qlineargradient" in LIGHT_QSS)
 check("light theme uses tinted off-white main bg (cards stand out)",
@@ -854,7 +854,7 @@ for k in AUDIO_TEMPLATE_ORDER:
           and lbl == "[vout]" and "[aout]" in fc,
           f"label={lbl!r}, fc[:60]={fc[:60]!r}")
 
-# V14.3.8: actually run each template's filter graph through FFmpeg
+# V14.3.9: actually run each template's filter graph through FFmpeg
 # (against a silent lavfi audio source) so any "Option not found" /
 # syntax errors fail loudly rather than at the user's encode time.
 import subprocess as _sp
@@ -912,9 +912,9 @@ check("profile_opts passes audio_template through",
 
 
 # ===========================================================================
-# 15. V14.3.8: updater download runs on a QThread (no more GUI freeze)
+# 15. V14.3.9: updater download runs on a QThread (no more GUI freeze)
 # ===========================================================================
-section("V14.3.8: updater download worker")
+section("V14.3.9: updater download worker")
 
 from app.updater import DownloadWorker as _DW
 import inspect as _inspectV14
@@ -933,7 +933,7 @@ check("DownloadWorker passes a cancel callback",
 # download_installer uses 1 MB chunks.
 import app.updater as _upd
 _di_src = _inspectV14.getsource(_upd.download_installer)
-check("download_installer chunk size = 64 KB (V14.3.8 perf fix)",
+check("download_installer chunk size = 64 KB (V14.3.9 perf fix)",
       "chunk_size = 64 * 1024" in _di_src,
       "V14.0.1 incorrectly bumped to 1 MB and tanked throughput")
 
@@ -953,9 +953,9 @@ check("Progress bar uses 0..1000 range for sub-percent granularity",
 
 
 # ===========================================================================
-# 16. V14.3.8: preview overlay clears + installer no longer side-by-side
+# 16. V14.3.9: preview overlay clears + installer no longer side-by-side
 # ===========================================================================
-section("V14.3.8: preview clear + installer overwrite")
+section("V14.3.9: preview clear + installer overwrite")
 
 mw_v142 = open(ROOT / "app" / "main_window.py", encoding="utf-8").read()
 
@@ -993,9 +993,9 @@ check("installer sets VersionInfo* so Setup EXE icon shows",
 
 
 # ===========================================================================
-# 17. V14.3.8: Single instance + HiDPI + responsive hardening
+# 17. V14.3.9: Single instance + HiDPI + responsive hardening
 # ===========================================================================
-section("V14.3.8: single-instance, HiDPI, min size")
+section("V14.3.9: single-instance, HiDPI, min size")
 
 # Single-instance module exists and exposes the public API.
 from app import single_instance as _si
@@ -1036,9 +1036,9 @@ check("MainWindow still calls saveGeometry on close",
 
 
 # ===========================================================================
-# 18. V14.3.8: single-instance ACK handshake + dynamic version log
+# 18. V14.3.9: single-instance ACK handshake + dynamic version log
 # ===========================================================================
-section("V14.3.8: single-instance ACK + dynamic persistence version")
+section("V14.3.9: single-instance ACK + dynamic persistence version")
 
 si_src = inspect.getsource(_si)
 check("single_instance defines ACK_MAGIC",
@@ -1059,9 +1059,9 @@ check("persistence.py reads APP_VERSION dynamically (no V13.0 hardcode)",
 
 
 # ===========================================================================
-# 19. V14.3.8: macOS source-level support + GitHub Actions
+# 19. V14.3.9: macOS source-level support + GitHub Actions
 # ===========================================================================
-section("V14.3.8: cross-platform foundation")
+section("V14.3.9: cross-platform foundation")
 
 from app import platform_compat as _pc
 check("platform_compat exposes IS_WIN / IS_MAC / IS_LINUX",
@@ -1072,8 +1072,8 @@ check("platform_tag returns 'windows' on Windows host",
 
 # Asset picker honours platform: Windows host should still pick .exe.
 mac_assets = [
-    {"name": "Veloxa-Video-Editor-V14.3.8-Setup.exe"},
-    {"name": "Veloxa-Video-Editor-V14.3.8-macOS.dmg"},
+    {"name": "Veloxa-Video-Editor-V14.3.9-Setup.exe"},
+    {"name": "Veloxa-Video-Editor-V14.3.9-macOS.dmg"},
 ]
 picked = _pc.pick_release_asset(mac_assets)
 if _pc.IS_WIN:
@@ -1133,9 +1133,9 @@ check("Workflow uploads .dmg to the matching release",
 
 
 # ===========================================================================
-# V14.3.8 — Parallel CPU encoder slot + add-files-while-batch-runs
+# V14.3.9 — Parallel CPU encoder slot + add-files-while-batch-runs
 # ===========================================================================
-section("V14.3.8 — CPU/GPU parallel slot + safety + queue-add")
+section("V14.3.9 — CPU/GPU parallel slot + safety + queue-add")
 
 # ---- engine/system_resources.py contract --------------------------------
 from engine import system_resources as _sr
@@ -1235,9 +1235,9 @@ check("requirements.txt includes psutil>=5.9",
 
 
 # ===========================================================================
-# V14.3.8 — first-video-stuck-at-0% progress fix
+# V14.3.9 — first-video-stuck-at-0% progress fix
 # ===========================================================================
-section("V14.3.8 — progress emission fix")
+section("V14.3.9 — progress emission fix")
 
 # Re-read engine/batch.py for these checks.
 _batch_src_143 = (ROOT / "engine" / "batch.py").read_text(encoding="utf-8")
@@ -1279,9 +1279,9 @@ check("_run_ffmpeg decodes stderr bytes",
 
 
 # ===========================================================================
-# V14.3.8 — audio-template preview pane fix
+# V14.3.9 — audio-template preview pane fix
 # ===========================================================================
-section("V14.3.8 — audio-template preview pane")
+section("V14.3.9 — audio-template preview pane")
 
 # 1) The new generator exists at the engine level.
 from engine import (
@@ -1318,9 +1318,9 @@ check("generate_audio_template_preview uses -update 1 for last-frame win",
 
 
 # ===========================================================================
-# V14.3.8 — platform-asset routing must never mix .exe and .dmg
+# V14.3.9 — platform-asset routing must never mix .exe and .dmg
 # ===========================================================================
-section("V14.3.8 — Win → .exe only / Mac → .dmg only (no mixing)")
+section("V14.3.9 — Win → .exe only / Mac → .dmg only (no mixing)")
 
 # Monkey-patch IS_WIN / IS_MAC to verify both branches lock in correctly.
 import app.platform_compat as _pc_routing
@@ -1329,9 +1329,9 @@ _SAVED_MAC = _pc_routing.IS_MAC
 _SAVED_LINUX = _pc_routing.IS_LINUX
 
 _release_v143 = [
-    {"name": "Veloxa-Video-Editor-V14.3.8-Setup.exe",
+    {"name": "Veloxa-Video-Editor-V14.3.9-Setup.exe",
      "browser_download_url": "https://x/win.exe", "size": 100},
-    {"name": "Veloxa-Video-Editor-V14.3.8-macOS.dmg",
+    {"name": "Veloxa-Video-Editor-V14.3.9-macOS.dmg",
      "browser_download_url": "https://x/mac.dmg", "size": 100},
 ]
 try:
@@ -1345,7 +1345,7 @@ try:
           _win_pick and not _win_pick["name"].endswith(".dmg"))
     # When ONLY a .dmg is present, Win refuses (returns None).
     _win_only_dmg = _pc_routing.pick_release_asset(
-        [{"name": "Veloxa-V14.3.8-macOS.dmg",
+        [{"name": "Veloxa-V14.3.9-macOS.dmg",
           "browser_download_url": "https://x/m.dmg", "size": 1}])
     check("Win branch refuses .dmg as fallback (returns None)",
           _win_only_dmg is None)
@@ -1360,7 +1360,7 @@ try:
           _mac_pick and not _mac_pick["name"].endswith(".exe"))
     # When ONLY an .exe is present, Mac refuses (returns None).
     _mac_only_exe = _pc_routing.pick_release_asset(
-        [{"name": "Veloxa-V14.3.8-Setup.exe",
+        [{"name": "Veloxa-V14.3.9-Setup.exe",
           "browser_download_url": "https://x/w.exe", "size": 1}])
     check("Mac branch refuses .exe as fallback (returns None)",
           _mac_only_exe is None)
@@ -1382,9 +1382,9 @@ check("check_for_updates log message is platform-agnostic",
 
 
 # ===========================================================================
-# V14.3.8 — auto-assign audio visuals at add-to-queue time
+# V14.3.9 — auto-assign audio visuals at add-to-queue time
 # ===========================================================================
-section("V14.3.8 — auto-assign audio visuals on add")
+section("V14.3.9 — auto-assign audio visuals on add")
 
 # Source-level checks (running the full MainWindow blocks on single-
 # instance + startup update poll, so we don't instantiate it in the
@@ -1434,9 +1434,9 @@ check("_build_jobs has 'already_has_visual' guard",
 
 
 # ===========================================================================
-# V14.3.8 — light-theme queue-row text was invisible (white-on-white)
+# V14.3.9 — light-theme queue-row text was invisible (white-on-white)
 # ===========================================================================
-section("V14.3.8 — light theme: queue-row labels must be readable")
+section("V14.3.9 — light theme: queue-row labels must be readable")
 
 # 1) Both QSS files now carry an explicit QLabel[role="queue-row-label"]
 #    rule with theme-appropriate colours.
@@ -1478,10 +1478,10 @@ check("_apply_row_selection_styles re-polishes after property change",
 
 
 # ===========================================================================
-# V14.3.8 — build mode: --onedir (was --onefile, caused python314.dll
+# V14.3.9 — build mode: --onedir (was --onefile, caused python314.dll
 # LoadLibrary failures after Windows in-app updates)
 # ===========================================================================
-section("V14.3.8 — Windows build uses --onedir (no _MEI extract race)")
+section("V14.3.9 — Windows build uses --onedir (no _MEI extract race)")
 
 _build_ps1 = (ROOT / "build.ps1").read_text(encoding="utf-8")
 # Drop comment lines (start with # after any whitespace) before checking.
@@ -1507,9 +1507,9 @@ check("installer.iss still renames to unversioned EXE name",
 
 
 # ===========================================================================
-# V14.3.8 — settings tabs wrap in QScrollArea (macOS row-overlap fix)
+# V14.3.9 — settings tabs wrap in QScrollArea (macOS row-overlap fix)
 # ===========================================================================
-section("V14.3.8 — settings tabs scroll instead of overlapping on macOS")
+section("V14.3.9 — settings tabs scroll instead of overlapping on macOS")
 
 _mw_src_148 = (ROOT / "app" / "main_window.py").read_text(encoding="utf-8")
 check("QScrollArea imported in app/main_window.py",
@@ -1538,6 +1538,45 @@ check("QSS has QScrollArea styling for scroll viewport",
       _theme_src_148.count("QScrollArea") >= 2)
 check("QSS has QScrollBar:vertical styling (light + dark = 2 rules)",
       _theme_src_148.count("QScrollBar:vertical") >= 2)
+
+
+# ===========================================================================
+# V14.3.9 — audio row label respects active audio template
+# ===========================================================================
+section("V14.3.9 — audio row label: template-active stops showing "
+        "'(visual needed)'")
+
+_mw_src_149 = (ROOT / "app" / "main_window.py").read_text(encoding="utf-8")
+_refresh_label_src = _mw_src_149.split(
+    "def _refresh_item_label")[1].split("def ")[0]
+
+# 1) The label now branches on _has_audio_template_active() before
+#    falling through to "(visual needed)".
+check("_refresh_item_label checks _has_audio_template_active",
+      "_has_audio_template_active" in _refresh_label_src)
+check("_refresh_item_label still has the '(visual needed)' fallback "
+      "(when no template AND no per-row visual)",
+      '"  (visual needed)"' in _refresh_label_src
+      or "'  (visual needed)'" in _refresh_label_src)
+check("_refresh_item_label uses the active template name as the tag",
+      "audio_template_combo.currentText()" in _refresh_label_src
+      and "+{tpl_name}" in _refresh_label_src)
+
+# 2) Auto-assign now logs why it no-ops on every gate (the "user can't
+#    diagnose what's wrong" issue from the Mac report).
+_aafn_src_149 = _mw_src_149.split(
+    "def _auto_assign_audio_visuals_for_new")[1].split("\n    def ")[0]
+check("Auto-assign logs the 'template active' no-op reason",
+      'audio template active' in _aafn_src_149
+      or 'template synthesises' in _aafn_src_149)
+check("Auto-assign logs the 'checkbox is OFF' no-op reason",
+      "checkbox is OFF" in _aafn_src_149)
+check("Auto-assign logs missing-on-disk Profile Visuals entries",
+      "missing on disk" in _aafn_src_149
+      or "missing_paths" in _aafn_src_149)
+check("Auto-assign logs the 'list has 0 usable entries' no-op reason",
+      "0 usable" in _aafn_src_149
+      or "usable entries" in _aafn_src_149)
 
 
 # ===========================================================================
