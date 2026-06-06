@@ -220,6 +220,23 @@ QTabBar::tab {
 QTabBar::tab:selected { background: #2d313a; color: #f58220; font-weight: 700; }
 QTabBar::tab:hover    { color: #ffffff; }
 
+/* V14.3.8: settings tabs are now wrapped in QScrollArea so their
+   natural content height can exceed the tab pane (macOS native
+   controls are taller than Windows defaults, causing row overlap
+   without scroll). Style the scroll area + its viewport flat so it
+   reads as part of the tab pane, not a sunken sub-frame. */
+QScrollArea          { background: transparent; border: none; }
+QScrollArea > QWidget > QWidget { background: transparent; }
+QScrollBar:vertical  {
+    background: #23262d; width: 10px; margin: 2px 0; border-radius: 5px;
+}
+QScrollBar::handle:vertical {
+    background: #4a4f5a; border-radius: 5px; min-height: 28px;
+}
+QScrollBar::handle:vertical:hover { background: #5d6371; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
+
 /* ---- tooltip ---- */
 QToolTip {
     background: #15171c;
@@ -589,6 +606,21 @@ QTabBar::tab:selected {
     border-bottom: 2px solid #f58220;
 }
 QTabBar::tab:hover:!selected { color: #1c2128; }
+
+/* V14.3.8: settings tabs wrapped in QScrollArea for macOS layout
+   sanity. Keep the scroll area flat so it reads as part of the tab
+   pane (which is already styled with its own border + radius). */
+QScrollArea          { background: transparent; border: none; }
+QScrollArea > QWidget > QWidget { background: transparent; }
+QScrollBar:vertical  {
+    background: #eef0f4; width: 10px; margin: 2px 0; border-radius: 5px;
+}
+QScrollBar::handle:vertical {
+    background: #c4cad3; border-radius: 5px; min-height: 28px;
+}
+QScrollBar::handle:vertical:hover { background: #a5aab2; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
 
 /* ---- tooltip ---- */
 QToolTip {

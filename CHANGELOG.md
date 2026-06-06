@@ -1,3 +1,45 @@
+# Veloxa Video Editor — V14.3.8
+
+**Hot-fix.** macOS — the Watermark / Audio Visuals / Output settings tabs no longer render with overlapping rows.
+
+## What was broken
+
+On macOS, the Settings → **Watermark** tab (and the other settings tabs to a smaller degree) rendered with row labels stacked on top of their controls — the `Image:` label sat over the file-picker line edit, `Position:` sat over the position combo, etc. Every control was technically present but visually layered.
+
+## Root cause
+
+Settings tabs use a `QGridLayout` inside each `QGroupBox` (Image Watermark / Video Watermark / Text Watermark). The natural content height of those three group boxes stacked vertically is around 750-800 px on macOS, where the native `QComboBox` / `QSpinBox` / `QPushButton` controls are noticeably taller than the Windows defaults.
+
+On a window that's shorter than the natural content height, Qt's layout engine has two options: scroll, or squish the rows to fit. There was **no `QScrollArea` wrapping the tab content**, so Qt squished every row by ~10-15 px, which is enough to push the controls visually behind the previous row's label. On Windows the natural height fit, so nobody saw the bug there.
+
+## Fix
+
+`app/main_window.py`:
+
+- New `MainWindow._wrap_in_scroll(content)` helper — wraps a widget in a `QScrollArea` with `setWidgetResizable(True)`, no frame, and the horizontal scrollbar disabled.
+- `_build_settings_pane` wraps **all four** tabs (Trim, Watermark, Audio Visuals, Output) so the same bug can't show up on a different tab when controls are added later.
+
+`app/theme.py`:
+
+- Both `DARK_QSS` and `LIGHT_QSS` style `QScrollArea` flat (transparent background, no border) so it reads as part of the tab pane.
+- Both QSS files style `QScrollBar:vertical` so the new vertical scrollbar matches the theme (thin, rounded, brand-accent on hover).
+
+## What you'll see now
+
+If the window is tall enough, the tab looks exactly as before — no scrollbar appears. If the window is short, a slim vertical scrollbar appears on the right side of the tab content and you can scroll to reach the rows that fell off the bottom. No more overlap on any platform.
+
+## Tests
+
+- 334 / 334 main regression probes pass (8 new V14.3.8 probes verify the wrap helper, the import, all four tabs wrapped, and the QSS styling in both themes).
+- EXE smoke launch on Windows: clean.
+
+## Downloads
+
+- **Windows:** `Veloxa-Video-Editor-V14.3.8-Setup.exe`
+- **macOS:** `Veloxa-Video-Editor-V14.3.8-macOS.dmg` (ad-hoc signed)
+
+---
+
 # Veloxa Video Editor — V14.3.7
 
 **Hot-fix.** First launch after an update no longer fails with **"Failed to load Python DLL ... python314.dll. LoadLibrary: The specified module could not be found."** — you no longer have to close and re-open the app.

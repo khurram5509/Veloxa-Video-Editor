@@ -18,8 +18,9 @@ from PyQt6.QtWidgets import (
     QApplication, QCheckBox, QColorDialog, QComboBox, QDoubleSpinBox,
     QFileDialog, QFrame, QGridLayout, QGroupBox, QHBoxLayout, QInputDialog,
     QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMenu,
-    QMessageBox, QProgressBar, QProgressDialog, QPushButton, QSlider,
-    QSpinBox, QSplitter, QSystemTrayIcon, QTabWidget, QVBoxLayout, QWidget,
+    QMessageBox, QProgressBar, QProgressDialog, QPushButton, QScrollArea,
+    QSlider, QSpinBox, QSplitter, QSystemTrayIcon, QTabWidget, QVBoxLayout,
+    QWidget,
 )
 
 from engine import (
@@ -582,11 +583,38 @@ class MainWindow(QMainWindow):
 
     def _build_settings_pane(self) -> QWidget:
         tabs = QTabWidget()
-        tabs.addTab(self._build_trim_tab(), "Trim")
-        tabs.addTab(self._build_watermark_tab(), "Watermark")
-        tabs.addTab(self._build_audio_visuals_tab(), "Audio Visuals")
-        tabs.addTab(self._build_output_tab(), "Output")
+        # V14.3.8: wrap each tab in a QScrollArea so the natural content
+        # height can exceed the tab pane height without rows overlapping.
+        # This was a macOS-only bug: macOS native QComboBox / QSpinBox /
+        # QPushButton are visibly taller than the Windows defaults, so on
+        # a short window the Watermark tab's 18 rows of controls couldn't
+        # all fit and the layout engine squished rows into each other,
+        # producing a stacked / overlapped look (see V14.3.8 release).
+        # Wrapping every tab keeps the fix consistent across platforms.
+        tabs.addTab(self._wrap_in_scroll(self._build_trim_tab()), "Trim")
+        tabs.addTab(self._wrap_in_scroll(self._build_watermark_tab()),
+                    "Watermark")
+        tabs.addTab(self._wrap_in_scroll(self._build_audio_visuals_tab()),
+                    "Audio Visuals")
+        tabs.addTab(self._wrap_in_scroll(self._build_output_tab()),
+                    "Output")
         return tabs
+
+    def _wrap_in_scroll(self, content: QWidget) -> QScrollArea:
+        """V14.3.8: wrap a tab's content widget in a vertically-scrolling
+        :class:`QScrollArea`. ``setWidgetResizable(True)`` lets the inner
+        widget expand to fill the viewport horizontally (and only show
+        a vertical scrollbar when the natural height exceeds the
+        viewport). ``NoFrame`` keeps the visual chrome flush with the
+        tab pane edges — the QSS already paints the pane background.
+        """
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setWidget(content)
+        return scroll
 
     def _build_trim_tab(self) -> QWidget:
         w = QWidget()
