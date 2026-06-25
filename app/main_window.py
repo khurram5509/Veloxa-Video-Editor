@@ -29,8 +29,8 @@ from engine import (
     generate_preview, generate_visual_preview,
     generate_audio_template_preview,
     detect_available_encoders, ENCODER_LABELS, ENCODER_FOR_CODEC,
-    AUTO_PRIORITY_H264, AUTO_PRIORITY_HEVC, SPEED_TIERS,
-    CODEC_H264, CODEC_HEVC, CPU_ENCODERS,
+    AUTO_PRIORITY_H264, AUTO_PRIORITY_HEVC, AUTO_PRIORITY_AV1, SPEED_TIERS,
+    CODEC_H264, CODEC_HEVC, CODEC_AV1, CPU_ENCODERS,
     # V12.3.1: quality-tier dropdowns replace raw bitrate spinboxes.
     VIDEO_QUALITY_TIERS, AUDIO_QUALITY_TIERS,
     VIDEO_QUALITY_DEFAULT, AUDIO_QUALITY_DEFAULT,
@@ -146,7 +146,16 @@ RESOLUTIONS = {
     "4K (3840x2160)": (3840, 2160),
 }
 
-CODEC_LABELS = {CODEC_H264: "H.264 (AVC)", CODEC_HEVC: "H.265 (HEVC)"}
+CODEC_LABELS = {
+    CODEC_H264: "H.264 (AVC)",
+    CODEC_HEVC: "H.265 (HEVC)",
+    # V14.7.0: AV1 — ~30% smaller files at the same visual quality vs
+    # H.264, but encode speed depends entirely on hardware: AV1 NVENC
+    # (RTX 40-series+), AV1 QSV (Arc / 12th-gen+), AV1 AMF (RX 7000+),
+    # or libsvtav1 on CPU (fast but not real-time on 1080p+). The
+    # encoder dropdown only shows the variants that probed working.
+    CODEC_AV1:  "AV1",
+}
 AUTO_ENCODER = "(auto)"
 
 
@@ -641,11 +650,27 @@ class MainWindow(QMainWindow):
         avail = set(getattr(self, "available_encoders", None) or [])
         # NVIDIA / AMD / Intel — by encoder family.
         if "h264_nvenc" in avail or "hevc_nvenc" in avail:
-            gpus.append("NVIDIA NVENC")
+            tag = "NVIDIA NVENC"
+            if "av1_nvenc" in avail:
+                tag += " (incl. AV1)"
+            gpus.append(tag)
         if "h264_amf" in avail or "hevc_amf" in avail:
-            gpus.append("AMD AMF")
+            tag = "AMD AMF"
+            if "av1_amf" in avail:
+                tag += " (incl. AV1)"
+            gpus.append(tag)
         if "h264_qsv" in avail or "hevc_qsv" in avail:
-            gpus.append("Intel QSV")
+            tag = "Intel QSV"
+            if "av1_qsv" in avail:
+                tag += " (incl. AV1)"
+            gpus.append(tag)
+        # V14.7.0: surface the CPU AV1 encoder separately when no GPU
+        # AV1 was found, so users see that AV1 is available at all on
+        # this PC even if it'll be slower than h264/hevc.
+        has_gpu_av1 = any(e in avail for e in
+                          ("av1_nvenc", "av1_amf", "av1_qsv"))
+        if "libsvtav1" in avail and not has_gpu_av1:
+            gpus.append("SVT-AV1 (CPU)")
         if gpus:
             return ("GPU acceleration: " + " · ".join(gpus)
                     + " (auto-detected). "
@@ -4458,18 +4483,40 @@ class MainWindow(QMainWindow):
 
     def _resolve_encoder(self) -> str:
         codec = self._codec_value()
-        priority = (AUTO_PRIORITY_HEVC if codec == CODEC_HEVC
-                    else AUTO_PRIORITY_H264)
+        # V14.7.0: AV1 picks NVENC/AMF/QSV first then libsvtav1; the
+        # CPU fallback is "libsvtav1" rather than libx26x because AV1
+        # output requires an AV1 encoder. If no AV1 encoder is
+        # available (older FFmpeg + no AV1 GPU), the encoder dropdown
+        # won't have any usable item and (auto) silently degrades to
+        # the H.264 default so the encode doesn't fail outright.
+        if codec == CODEC_AV1:
+            priority = AUTO_PRIORITY_AV1
+            cpu_fallback = "libsvtav1"
+        elif codec == CODEC_HEVC:
+            priority = AUTO_PRIORITY_HEVC
+            cpu_fallback = "libx265"
+        else:
+            priority = AUTO_PRIORITY_H264
+            cpu_fallback = "libx264"
         if self.out_encoder.currentText() == AUTO_ENCODER:
             for name in priority:
                 if name in self.available_encoders:
                     return name
-            return "libx265" if codec == CODEC_HEVC else "libx264"
+            # AV1 has no guaranteed CPU fallback (libsvtav1 not in every
+            # FFmpeg build) — drop to libx264 so the encode at least
+            # produces a valid file, with a log line so support can
+            # diagnose later.
+            if cpu_fallback in self.available_encoders:
+                return cpu_fallback
+            log.warning("No %s encoder available on this PC; falling "
+                        "back to libx264", codec)
+            return "libx264"
         idx = self.out_encoder.currentIndex()
         data = self.out_encoder.itemData(idx)
         if data:
             return data
-        return "libx265" if codec == CODEC_HEVC else "libx264"
+        return (cpu_fallback if cpu_fallback in self.available_encoders
+                else "libx264")
 
     # ====================================================== batch encode
 

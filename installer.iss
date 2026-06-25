@@ -1,13 +1,13 @@
-; Inno Setup script for Veloxa Video Editor V14.6.0
+; Inno Setup script for Veloxa Video Editor V14.7.0
 ; Builds a single Windows installer EXE that puts the app under
 ; Program Files, creates Start Menu + Desktop shortcuts, and registers
 ; an uninstaller. Run from the project root after building the app:
 ;
 ;   "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" installer.iss
 ;
-; The output lands in .\installer\Veloxa-Video-Editor-V14.6.0-Setup.exe.
+; The output lands in .\installer\Veloxa-Video-Editor-V14.7.0-Setup.exe.
 ;
-; V14.6.0 fix: the installed EXE is now ALWAYS named
+; V14.7.0 fix: the installed EXE is now ALWAYS named
 ; ``Veloxa-Video-Editor.exe`` (no version in the filename), and the
 ; Start Menu / Desktop shortcuts are ALWAYS named ``Veloxa Video Editor``
 ; (no version label). Without this, every release dropped a NEW
@@ -19,13 +19,13 @@
 ; versioned files / shortcuts left behind by V11..V14.0.1 installs.
 
 #define AppName             "Veloxa Video Editor"
-#define AppVersion          "14.6.0"
+#define AppVersion          "14.7.0"
 #define AppPublisher        "VeloxaLAB"
 #define AppExeName          "Veloxa-Video-Editor.exe"
 ; The PyInstaller output is still versioned so dist/ shows the build
 ; we're packaging. Inno renames it to AppExeName at install time via
 ; DestName= in [Files].
-#define AppBuildExe         "Veloxa-Video-Editor-V14.6.0.exe"
+#define AppBuildExe         "Veloxa-Video-Editor-V14.7.0.exe"
 ; AppId kept stable since V11.x so installer-driven upgrades replace
 ; the previous Veloxa install in place. Same GUID for the entire
 ; V11.x -> V14.x series. Do NOT change unless you actually want a
@@ -87,8 +87,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional shortcuts:"
 
 [Files]
-; V14.6.0: PyInstaller now produces a --onedir bundle at
-; dist\Veloxa-Video-Editor-V14.6.0\ containing the launcher EXE plus a
+; V14.7.0: PyInstaller now produces a --onedir bundle at
+; dist\Veloxa-Video-Editor-V14.7.0\ containing the launcher EXE plus a
 ; sibling _internal\ directory with python314.dll, Qt6Core.dll, and
 ; every other support file. Copy the whole tree to {app}; the launcher
 ; EXE is renamed at install time to the unversioned name so the desktop
@@ -100,11 +100,11 @@ Source: "dist\Veloxa-Video-Editor-V{#AppVersion}\_internal\*"; \
     Flags: ignoreversion recursesubdirs createallsubdirs
 
 [InstallDelete]
-; V14.6.0: clean up legacy versioned filenames + shortcuts left behind
-; by V11 .. V14.6.0 installs (which were single-EXE --onefile builds).
+; V14.7.0: clean up legacy versioned filenames + shortcuts left behind
+; by V11 .. V14.7.0 installs (which were single-EXE --onefile builds).
 ; Without this users would end up with multiple "Veloxa Video Editor
 ; V<X>" entries in their Start Menu, on their desktop, and stale orphan
-; EXEs in {app}. Also wipe any pre-existing _internal\ from a V14.6.0+
+; EXEs in {app}. Also wipe any pre-existing _internal\ from a V14.7.0+
 ; install in case the dependency tree changed between releases (e.g. a
 ; PyQt6 minor bump dropped a DLL we no longer need).
 Type: files; Name: "{app}\Veloxa-Video-Editor-V*.exe"
@@ -125,7 +125,7 @@ Name: "{autoprograms}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
 Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName} V{#AppVersion}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
-; V14.6.0: --onedir lays down the EXE + _internal\ subtree under {app}.
+; V14.7.0: --onedir lays down the EXE + _internal\ subtree under {app}.
 ; Sweep the entire install dir on uninstall so no orphan files remain
 ; (the launcher EXE, every _internal\ DLL, the ffmpeg subtree, the
 ; app.ico). The legacy single-EXE %TEMP%\_MEI* extract paths are no

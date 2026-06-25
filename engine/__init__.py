@@ -22,11 +22,14 @@ from .encoders import (
     CPU_ENCODERS,
     GPU_H264,
     GPU_HEVC,
+    GPU_AV1,                   # V14.7.0
     AUTO_PRIORITY_H264,
     AUTO_PRIORITY_HEVC,
+    AUTO_PRIORITY_AV1,         # V14.7.0
     SPEED_TIERS,
     CODEC_H264,
     CODEC_HEVC,
+    CODEC_AV1,                 # V14.7.0
     ENCODER_LABELS,
     ENCODER_FOR_CODEC,
     detect_available_encoders,
@@ -63,9 +66,11 @@ __all__ = [
     "generate_preview", "generate_visual_preview",
     "generate_audio_template_preview",
     # Encoders
-    "CPU_ENCODERS", "GPU_H264", "GPU_HEVC",
-    "AUTO_PRIORITY_H264", "AUTO_PRIORITY_HEVC", "SPEED_TIERS",
-    "CODEC_H264", "CODEC_HEVC", "ENCODER_LABELS", "ENCODER_FOR_CODEC",
+    "CPU_ENCODERS", "GPU_H264", "GPU_HEVC", "GPU_AV1",
+    "AUTO_PRIORITY_H264", "AUTO_PRIORITY_HEVC", "AUTO_PRIORITY_AV1",
+    "SPEED_TIERS",
+    "CODEC_H264", "CODEC_HEVC", "CODEC_AV1",
+    "ENCODER_LABELS", "ENCODER_FOR_CODEC",
     "detect_available_encoders", "encoder_codec_args", "audio_codec_args",
     "VIDEO_QUALITY_TIERS", "AUDIO_QUALITY_TIERS",
     "VIDEO_QUALITY_DEFAULT", "AUDIO_QUALITY_DEFAULT",

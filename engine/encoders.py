@@ -18,14 +18,26 @@ from .ffmpeg import CREATE_NO_WINDOW
 CPU_ENCODERS = ["libx264", "libx265"]
 GPU_H264 = ["h264_nvenc", "h264_qsv", "h264_amf"]
 GPU_HEVC = ["hevc_nvenc", "hevc_qsv", "hevc_amf"]
-GPU_ENCODERS_TO_TEST = GPU_H264 + GPU_HEVC
+# V14.7.0: AV1 — modern codec, ~30 % smaller files at the same
+# perceived quality vs H.264 / H.265. GPU support is recent:
+#  * NVIDIA AV1 NVENC requires Ada (RTX 40-series) or newer.
+#  * Intel AV1 QSV requires Arc / 12th-gen Core or newer.
+#  * AMD AV1 AMF requires RX 7000-series or newer.
+# Older hardware falls back to SVT-AV1 (the CPU encoder, fast but not
+# real-time). libsvtav1 is not in every FFmpeg build, so we treat it
+# like the GPU encoders and probe it before adding to the dropdown.
+GPU_AV1 = ["av1_nvenc", "av1_qsv", "av1_amf"]
+CPU_AV1_PROBE = ["libsvtav1"]
+GPU_ENCODERS_TO_TEST = GPU_H264 + GPU_HEVC + GPU_AV1 + CPU_AV1_PROBE
 
 CODEC_H264 = "h264"
 CODEC_HEVC = "hevc"
+CODEC_AV1 = "av1"   # V14.7.0
 
 ENCODER_FOR_CODEC = {
     CODEC_H264: ["libx264"] + GPU_H264,
     CODEC_HEVC: ["libx265"] + GPU_HEVC,
+    CODEC_AV1:  CPU_AV1_PROBE + GPU_AV1,
 }
 
 ENCODER_LABELS = {
@@ -37,11 +49,23 @@ ENCODER_LABELS = {
     "hevc_qsv":   "Intel QSV",
     "h264_amf":   "AMD AMF",
     "hevc_amf":   "AMD AMF",
+    # V14.7.0
+    "libsvtav1":  "CPU (SVT-AV1)",
+    "av1_nvenc":  "NVIDIA NVENC (AV1)",
+    "av1_qsv":    "Intel QSV (AV1)",
+    "av1_amf":    "AMD AMF (AV1)",
 }
 
 # Discrete GPU first, then iGPU, then CPU.
 AUTO_PRIORITY_H264 = ["h264_nvenc", "h264_amf", "h264_qsv", "libx264"]
 AUTO_PRIORITY_HEVC = ["hevc_nvenc", "hevc_amf", "hevc_qsv", "libx265"]
+# V14.7.0: AV1 follows the same priority pattern. ``libsvtav1`` is a
+# CPU encoder so it lives at the tail, but unlike libx264 / libx265
+# it is NOT guaranteed to be present (older FFmpeg builds ship
+# without it). The runtime probe in ``detect_available_encoders``
+# filters it the same way it filters the GPU encoders, so the
+# dropdown only shows encoders that actually work on this PC.
+AUTO_PRIORITY_AV1 = ["av1_nvenc", "av1_amf", "av1_qsv", "libsvtav1"]
 
 SPEED_TIERS = ["Fast", "Balanced", "High Quality"]
 
@@ -144,6 +168,15 @@ ENCODER_PRESETS = {
     "hevc_qsv":   {"Fast": "faster", "Balanced": "medium",   "High Quality": "slower"},
     "h264_amf":   {"Fast": "speed",  "Balanced": "balanced", "High Quality": "quality"},
     "hevc_amf":   {"Fast": "speed",  "Balanced": "balanced", "High Quality": "quality"},
+    # V14.7.0 — AV1.
+    # SVT-AV1 preset is an integer 0..13: 0 = best quality / slowest,
+    # 13 = worst quality / fastest. "4" is near-x264-medium quality but
+    # ~3x slower; "6" is a sane real-time-ish default; "8" is fast.
+    "libsvtav1":  {"Fast": "8",      "Balanced": "6",        "High Quality": "4"},
+    # av1_nvenc shares NVENC's p1..p7 ladder.
+    "av1_nvenc":  {"Fast": "p3",     "Balanced": "p5",       "High Quality": "p7"},
+    "av1_qsv":    {"Fast": "faster", "Balanced": "medium",   "High Quality": "slower"},
+    "av1_amf":    {"Fast": "speed",  "Balanced": "balanced", "High Quality": "quality"},
 }
 
 
@@ -158,7 +191,12 @@ ENCODER_PRESETS = {
 # h264_nvenc as "available" on their AMD laptop, then watch every encode
 # fail with "Cannot load nvcuda.dll". V3 caches that ship with V14.4.1+
 # are ignored on a different PC because the machine ID won't match.
-ENCODER_CACHE_SCHEMA = 3
+# V14.7.0: schema bumped to 4 — GPU_ENCODERS_TO_TEST now includes the
+# four AV1 encoders (av1_nvenc / av1_qsv / av1_amf / libsvtav1). Caches
+# written under schema 3 don't contain results for those probes, so we
+# invalidate them on first launch and run a one-shot rescan so AV1
+# can light up on supported hardware without user intervention.
+ENCODER_CACHE_SCHEMA = 4
 
 
 def _machine_id() -> str:
@@ -346,6 +384,37 @@ def encoder_codec_args(encoder: str, speed_tier: str,
                     "-pix_fmt", "yuv420p"]
         return ["-c:v", "hevc_amf", "-quality", preset or "balanced",
                 "-rc", "cqp", "-qp_i", "24", "-qp_p", "26", "-pix_fmt", "yuv420p"]
+    # V14.7.0 — AV1.
+    # CRF / QP / global_quality landmarks are higher than H.264 / HEVC
+    # because AV1's quality scale is differently calibrated: CRF 30 in
+    # SVT-AV1 is roughly equivalent to CRF 18 in libx264 visually.
+    if encoder == "libsvtav1":
+        if use_bitrate:
+            return ["-c:v", "libsvtav1", "-b:v", br,
+                    "-preset", preset or "6", "-pix_fmt", "yuv420p"]
+        return ["-c:v", "libsvtav1", "-crf", "30",
+                "-preset", preset or "6", "-pix_fmt", "yuv420p"]
+    if encoder == "av1_nvenc":
+        if use_bitrate:
+            return ["-c:v", "av1_nvenc", "-rc", "vbr",
+                    "-b:v", br, "-maxrate", br,
+                    "-preset", preset or "p5", "-pix_fmt", "yuv420p"]
+        return ["-c:v", "av1_nvenc", "-rc", "constqp", "-qp", "30",
+                "-preset", preset or "p5", "-pix_fmt", "yuv420p"]
+    if encoder == "av1_qsv":
+        if use_bitrate:
+            return ["-c:v", "av1_qsv", "-b:v", br,
+                    "-preset", preset or "medium", "-pix_fmt", "nv12"]
+        return ["-c:v", "av1_qsv", "-global_quality", "30",
+                "-preset", preset or "medium", "-pix_fmt", "nv12"]
+    if encoder == "av1_amf":
+        if use_bitrate:
+            return ["-c:v", "av1_amf", "-quality", preset or "balanced",
+                    "-rc", "vbr_peak", "-b:v", br, "-maxrate", br,
+                    "-pix_fmt", "yuv420p"]
+        return ["-c:v", "av1_amf", "-quality", preset or "balanced",
+                "-rc", "cqp", "-qp_i", "30", "-qp_p", "32",
+                "-pix_fmt", "yuv420p"]
     raise ValueError(f"Unknown encoder: {encoder}")
 
 

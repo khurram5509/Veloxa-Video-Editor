@@ -1,3 +1,55 @@
+# Veloxa Video Editor — V14.7.0
+
+**Feature.** **AV1 codec support** — ~30 % smaller files at the same visual quality vs H.264, with automatic GPU acceleration on supported cards.
+
+## What ships
+
+Output → Codec dropdown gains **AV1** as a third option alongside H.264 (AVC) and H.265 (HEVC). Four AV1 encoders are now in the catalog, picked automatically per machine via the V14.4.1 runtime probe:
+
+| Encoder | Hardware required | Picked first when… |
+|---|---|---|
+| ``av1_nvenc`` (NVIDIA NVENC AV1) | RTX 40-series (Ada) or newer | NVIDIA AV1 hardware found |
+| ``av1_amf`` (AMD AMF AV1) | RX 7000-series (RDNA 3) or newer | AMD AV1 hardware found |
+| ``av1_qsv`` (Intel QSV AV1) | Arc / 12th-gen Core or newer | Intel AV1 hardware found |
+| ``libsvtav1`` (SVT-AV1 on CPU) | Any (in modern FFmpeg builds) | No GPU AV1 found |
+
+Each encoder has Fast / Balanced / High Quality presets tuned per vendor (NVENC ``p3/p5/p7``, QSV ``faster/medium/slower``, AMF ``speed/balanced/quality``, SVT-AV1 preset ``8/6/4``).
+
+CRF defaults are calibrated to the AV1 quality scale: SVT-AV1 ``crf 30`` ≈ libx264 ``crf 18`` visually. Bitrate mode (``-b:v Nk``) works the same as on H.264 / HEVC for users who want explicit file-size targets.
+
+## How the existing GPU detection picks AV1
+
+The V14.4.1 runtime probe at app launch now also tests ``av1_nvenc``, ``av1_amf``, ``av1_qsv``, and ``libsvtav1`` — same FFmpeg probe (``-f lavfi -i color … -c:v <enc> -frames:v 1 -f null -``), same machine-keyed cache. Encoder cache schema bumped 3 → 4 so every PC re-probes once on first launch after upgrading.
+
+The status bar on launch now reads e.g. ``GPU acceleration: NVIDIA NVENC (incl. AV1) (auto-detected). Settings → Output → Encoder lets you override.`` — instantly visible whether your card supports AV1.
+
+The Output → Encoder dropdown only shows the AV1 variants that actually work on your machine, so a Ryzen 5800 laptop with no AV1 hardware sees just ``CPU (SVT-AV1)``, while an RTX 4090 sees ``NVIDIA NVENC (AV1) · CPU (SVT-AV1)``.
+
+## Tested with the build PC
+
+The build PC has an older NVIDIA card without AV1 NVENC. The probe correctly detected its capabilities:
+
+```
+GPU acceleration: NVIDIA NVENC · SVT-AV1 (CPU) (auto-detected).
+```
+
+A real AV1 encode through the production code path produced a valid AV1-in-MP4 output (``Video: av1 (libdav1d) … (av01 / 0x31307661)``) with exit code 0 — proving the args + cache + dropdown wiring all work end-to-end.
+
+## Tests
+
+- **426 / 426** main regression probes pass (**31 new V14.7.0 probes** verify the four AV1 encoders are in the catalog, ``ENCODER_FOR_CODEC[CODEC_AV1]`` is correct, ``AUTO_PRIORITY_AV1`` follows the NVIDIA → AMD → Intel → CPU pattern, ``encoder_codec_args`` produces the right ``-c:v`` flags + CRF / QP / bitrate args for each, the GUI wiring routes AV1 through the right priority list, and ``_describe_gpu_status`` flags AV1 hardware separately from H.264 / HEVC).
+- Behavioural smoke: real AV1 encode succeeded on the build PC via ``libsvtav1``.
+- EXE smoke launch on Windows: clean.
+
+## Downloads
+
+- **Windows:** ``Veloxa-Video-Editor-V14.7.0-Setup.exe`` (271 MB, --onedir)
+- **macOS:** ``Veloxa-Video-Editor-V14.7.0-macOS.dmg`` (~88 MB, ad-hoc signed; uses Apple VideoToolbox where the hardware exposes AV1)
+
+Existing V14.x users will be offered V14.7.0 via Help → Check for Updates… — Mac users get the .dmg, Windows users get the .exe (per V14.3.4 routing guarantee). The cache will re-probe on first launch so AV1 lights up automatically on supported hardware.
+
+---
+
 # Veloxa Video Editor — V14.6.0
 
 **Feature.** New **📂 Add from Folder…** button — pick a folder and the app pulls in every supported video / audio file in it AND every subfolder, in one click.
