@@ -1,3 +1,39 @@
+# Veloxa Video Editor — V14.6.0
+
+**Feature.** New **📂 Add from Folder…** button — pick a folder and the app pulls in every supported video / audio file in it AND every subfolder, in one click.
+
+## How it works
+
+The queue toolbar has a new button next to **＋ Add Files…**. Clicking it:
+
+1. Opens a folder picker (the last-used folder is remembered separately from the last-used file folder).
+2. Walks the chosen folder + every subfolder via ``os.walk`` — depth-first, deterministic case-insensitive sort within each directory.
+3. Picks every file whose extension is in ``ALL_INPUT_EXTS`` (videos: ``.mp4 .mov .mkv .avi .webm .flv .wmv .m4v .mpg .mpeg .ts .3gp``; audio: ``.mp3 .wav .m4a .flac .aac .ogg .opus .wma``). Sidecar ``.srt``, ``.jpg`` artwork, ``.docx`` notes, etc. are skipped.
+4. Funnels the collected paths through the existing ``_add_files`` so dedup, audio-visual auto-assign (V14.3.5), the mid-batch ``add_jobs()`` hook (V14.3.0), and the queue persistence (V14.5.0 resume) all work without changes.
+
+The button stays enabled mid-batch — newly-discovered files append to the running queue's tail like a manual Add Files would.
+
+## Edge cases handled
+
+- **Misclick on a 4 TB drive root**: hard cap at 100 000 files keeps the GUI responsive. The user sees a status update + log line if the cap is hit.
+- **Empty folder / no supported files**: friendly dialog listing the supported extensions instead of silently doing nothing.
+- **Unreadable subfolder** (permission denied): walk continues; failure surfaces as a warning dialog.
+- **Symlinks**: ``followlinks=False`` so a recursive symlink can't blow up the walk.
+- **Empty subfolders**: the walk skips them cleanly.
+
+## Tests
+
+- 395 / 395 main regression probes pass (7 new V14.6.0 probes verify the button wiring, the new handler, the collector function, mid-batch enabled state, and a behavioural smoke that scans a temp fixture tree).
+- 17 / 17 dedicated folder-scan unit tests (``_qa/v146_add_from_folder.py``) — covering the happy path, .srt / .jpg / .docx skipping, deterministic sort order, the max_files cap, missing folders, and empty-result folders.
+- EXE smoke launch on Windows: clean.
+
+## Downloads
+
+- **Windows:** ``Veloxa-Video-Editor-V14.6.0-Setup.exe`` (271 MB, --onedir)
+- **macOS:** ``Veloxa-Video-Editor-V14.6.0-macOS.dmg`` (~88 MB, ad-hoc signed)
+
+---
+
 # Veloxa Video Editor — V14.5.0
 
 **Features.** Resume interrupted batches with one click + opt-in crash reporter that sends a pre-filled GitHub Issue.

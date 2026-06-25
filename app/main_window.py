@@ -387,6 +387,14 @@ class MainWindow(QMainWindow):
         row = QHBoxLayout()
         self.add_btn = QPushButton("＋ Add Files...")
         self.add_btn.clicked.connect(self._on_add_clicked)
+        # V14.6.0: bulk-add from a folder (recursive). Picks a single
+        # directory then walks it + all subfolders for any file whose
+        # extension is in ALL_INPUT_EXTS. The collected paths flow
+        # through the normal _add_files path so dedup, audio-visual
+        # prompting (or auto-assign), watch-folder logic, and the
+        # mid-batch add_jobs() hook all work without changes.
+        self.add_folder_btn = QPushButton("📂 Add from Folder...")
+        self.add_folder_btn.clicked.connect(self._on_add_folder_clicked)
         self.remove_btn = QPushButton("− Remove Selected")
         self.remove_btn.clicked.connect(self._remove_selected)
         self.remove_done_btn = QPushButton("✓ Remove Done")
@@ -407,6 +415,7 @@ class MainWindow(QMainWindow):
         hint.setProperty("role", "muted")
         hint.setWordWrap(True)
         row.addWidget(self.add_btn)
+        row.addWidget(self.add_folder_btn)
         row.addWidget(self.remove_btn)
         row.addWidget(self.remove_done_btn)
         row.addWidget(self.clear_done_btn)
@@ -424,6 +433,8 @@ class MainWindow(QMainWindow):
         # disabled so the user can't pull the rug out from under the
         # encoder mid-job.
         self.add_btn.setEnabled(True)
+        if hasattr(self, "add_folder_btn"):
+            self.add_folder_btn.setEnabled(True)
         self.remove_btn.setEnabled(not locked)
         self.remove_done_btn.setEnabled(not locked)
         self.clear_done_btn.setEnabled(not locked)
@@ -2520,6 +2531,77 @@ class MainWindow(QMainWindow):
         if files:
             self.settings.setValue("last_dir", str(Path(files[0]).parent))
             self._add_files(files)
+
+    def _on_add_folder_clicked(self):
+        """V14.6.0: pick a folder and bulk-add every supported file in
+        it AND every subfolder. Walks via ``os.walk`` so deeply-nested
+        media libraries (Audiobook / Podcast / Season / Episode trees)
+        come in with one click. Filtering uses ``ALL_INPUT_EXTS`` so
+        random sidecar files (``.srt``, ``.jpg`` artwork, ``.txt``
+        notes, etc.) are ignored. The collected paths flow through
+        ``_add_files`` so existing dedup, audio-visual auto-assign
+        (V14.3.5), mid-batch ``add_jobs()`` (V14.3.0), and the queue
+        persistence all work without changes.
+        """
+        start_dir = (self.settings.value("last_folder_add_dir", "")
+                     or self.settings.value("last_dir", ""))
+        folder = QFileDialog.getExistingDirectory(
+            self, "Choose a folder (subfolders included)", start_dir)
+        if not folder:
+            return
+        self.settings.setValue("last_folder_add_dir", folder)
+        # Show a "scanning…" status so a large tree doesn't look frozen.
+        self.status_lbl.setText(
+            f"Scanning {folder} for supported files…")
+        QApplication.processEvents()
+        try:
+            collected = self._collect_supported_files(folder)
+        except Exception as exc:
+            log.warning("Folder scan failed for %s: %s", folder, exc)
+            QMessageBox.warning(
+                self, "Add from Folder",
+                f"Could not read the folder:\n\n{exc}")
+            self.status_lbl.setText("Folder scan failed.")
+            return
+        if not collected:
+            QMessageBox.information(
+                self, "Add from Folder",
+                f"No supported video or audio files found in:\n\n"
+                f"{folder}\n\n"
+                f"Supported extensions: "
+                f"{', '.join(sorted(ALL_INPUT_EXTS))}")
+            self.status_lbl.setText("No supported files in folder.")
+            return
+        log.info("Folder scan of %s found %d supported file(s)",
+                 folder, len(collected))
+        self.status_lbl.setText(
+            f"Adding {len(collected)} file(s) from folder…")
+        QApplication.processEvents()
+        self._add_files(collected)
+
+    def _collect_supported_files(self, folder: str,
+                                 max_files: int = 100000) -> list:
+        """V14.6.0: walk ``folder`` recursively and return every file
+        whose extension is in ``ALL_INPUT_EXTS``, in a stable
+        depth-first sorted order so the queue reads predictably.
+
+        Hard caps at ``max_files`` to keep a misclick on the root of
+        a 4 TB drive from locking up the GUI for minutes. The cap is
+        absurdly high (~100k) for any normal media library.
+        """
+        out: list = []
+        for root, dirs, files in os.walk(folder, followlinks=False):
+            # Sort children for deterministic queue order.
+            dirs.sort(key=str.lower)
+            for name in sorted(files, key=str.lower):
+                if Path(name).suffix.lower() in ALL_INPUT_EXTS:
+                    out.append(os.path.join(root, name))
+                    if len(out) >= max_files:
+                        log.info("Folder scan hit cap of %d files; "
+                                 "stopping descent into %s",
+                                 max_files, root)
+                        return out
+        return out
 
     def _kind_for_path(self, p: str) -> str:
         return "audio" if Path(p).suffix.lower() in AUDIO_EXTS else "video"
