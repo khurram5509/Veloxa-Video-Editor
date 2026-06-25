@@ -1,3 +1,59 @@
+# Veloxa Video Editor — V14.5.0
+
+**Features.** Resume interrupted batches with one click + opt-in crash reporter that sends a pre-filled GitHub Issue.
+
+## 1. Resume interrupted batches
+
+If the app or the PC dies mid-batch (power loss, crash, accidental close), the queue state has always been persisted to ``%APPDATA%\Veloxa-VD\V10\queue_state.json``. The restore dialog now has a third button:
+
+- **Resume & Start** — restores the queue and immediately fires Start Batch. One click and the unfinished encodes pick up where they left off.
+- **Restore only** — restores the queue but doesn't start (the previous "Yes" behaviour). Lets the user inspect rows before re-running.
+- **Discard** — wipes the saved state (was "No").
+
+Interrupted rows (``status == "encoding"`` at crash time) are reset to ``pending`` so the BatchManager picks them up on Start. Any partial output files from the killed encodes are overwritten by FFmpeg's ``-y`` flag — no manual cleanup needed.
+
+## 2. Opt-in crash reporter
+
+A new ``sys.excepthook`` installed in ``main.py`` (BEFORE Qt starts so even a ``MainWindow`` constructor exception is captured) writes a ``crash_<timestamp>.txt`` to ``%APPDATA%\Veloxa-VD\V10\logs\`` containing:
+
+- App version, Python version, platform string
+- The full traceback
+- The last ~200 lines of the active session log
+- **Username scrubbed from any path** that appears in the report (``C:\Users\Khurram\…`` → ``C:\Users\<user>\…``)
+
+On the next successful launch the GUI scans for unactioned crash files and (once you've opted in) offers three choices per crash:
+
+- **Send report** — opens a **pre-filled GitHub Issue** in your default browser, with the title and body already populated. **No data is sent automatically** — you review and submit on github.com.
+- **Later** — leaves the file in place; we ask again next launch.
+- **Discard** — marks the file ``*.dismissed`` so we never prompt about it again.
+
+### Opt-in flow
+
+On the first launch that finds a pending crash, you get a one-time dialog explaining what's in a report and asking whether to enable. Your choice is persisted under QSettings (``crash_reports_opt_in``) — you can flip it any time via **Tools → Crash reporting settings…**.
+
+### Manual reports
+
+**Tools → Report a problem…** lets you file a GitHub Issue with the *current* session log even when nothing crashed (useful for "weird behaviour but the app didn't die" reports).
+
+## Files
+
+- New: ``app/crash_reporter.py`` — excepthook installer, write_crash_file, list_pending_reports, mark_reported / mark_dismissed, build_issue_url, _sanitize_paths.
+- New: ``_qa/v145_crash_reporter.py`` — 22 unit probes covering sanitisation, file IO, URL building, and excepthook chaining.
+- ``main.py`` — installs the excepthook right after ``setup_logging()`` so MainWindow construction errors are captured too.
+- ``app/main_window.py`` — startup scans for pending crashes (3 s after launch so the auto-update dialog gets first dibs); Tools menu gains **Report a problem…** and **Crash reporting settings…**; resume dialog reworked to 3-way (Resume & Start / Restore only / Discard).
+
+## Tests
+
+- 388 / 388 main regression probes pass (23 new V14.5.0 probes verify the crash reporter API surface, sanitisation, main.py wiring, MainWindow handlers, the three-way resume dialog, and the auto-start helper).
+- 22 / 22 dedicated crash-reporter unit tests (``_qa/v145_crash_reporter.py``).
+
+## Downloads
+
+- **Windows:** ``Veloxa-Video-Editor-V14.5.0-Setup.exe`` (271 MB, --onedir)
+- **macOS:** ``Veloxa-Video-Editor-V14.5.0-macOS.dmg`` (~88 MB, ad-hoc signed)
+
+---
+
 # Veloxa Video Editor — V14.4.1
 
 **Feature.** GPU encoders are explicitly **detected per physical PC**, with a visible status line and a Tools menu item to force a re-probe.

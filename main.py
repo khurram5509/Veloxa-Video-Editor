@@ -69,6 +69,25 @@ def main():
     log_file = setup_logging()
     prune_old_logs(keep=30)
 
+    # V14.5.0: opt-in crash reporter. Install the excepthook BEFORE
+    # we touch Qt — that way even an exception during ``MainWindow``
+    # construction lands in a crash file under
+    # ``%APPDATA%\Veloxa-VD\V10\logs\crash_*.txt``. On the next
+    # successful launch the GUI scans for pending crash files and (if
+    # the user has opted in) offers to send them via a pre-filled
+    # GitHub Issue.
+    try:
+        from app.crash_reporter import install_excepthook
+        from app.updater import APP_VERSION
+        from app.persistence import log_dir as _log_dir
+        install_excepthook(_log_dir(), log_file, APP_VERSION)
+    except Exception:
+        # Crash reporter is opt-in and never required for normal
+        # operation — if it fails to install, log and continue.
+        import logging as _logging
+        _logging.getLogger("veloxa").info(
+            "Could not install crash reporter (continuing)", exc_info=True)
+
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     app.setFont(QFont("Segoe UI", 9))

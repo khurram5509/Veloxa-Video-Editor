@@ -275,6 +275,14 @@ class MainWindow(QMainWindow):
         self._update_temp_path = None
         self._update_dl_worker = None
         QTimer.singleShot(1500, self._maybe_check_for_updates_on_startup)
+        # V14.5.0: opt-in crash reporter. The excepthook in main.py
+        # writes a ``crash_*.txt`` to the log dir on any unhandled
+        # Python exception. On the next successful launch this scans
+        # for unactioned crash files and (if the user has opted in)
+        # offers to send them as pre-filled GitHub Issues. Scheduled
+        # 3 s in so it doesn't pile on top of the auto-update modal
+        # if there's also a pending update.
+        QTimer.singleShot(3000, self._maybe_prompt_pending_crashes)
 
     # ============================================================== UI build
 
@@ -634,6 +642,195 @@ class MainWindow(QMainWindow):
         return ("No GPU encoder detected on this PC — encoding will use "
                 "CPU (libx264 / libx265). "
                 "Tools → Re-detect GPU encoders to rerun the probe.")
+
+    # ============================================================ crash reporter
+
+    # Sentinel that the user has been asked whether to enable crash
+    # reporting at least once. False on a fresh install — we'll prompt
+    # on the first launch that finds a pending crash (or via the Tools
+    # menu).
+    _CRASH_OPT_IN_KEY = "crash_reports_opt_in"
+    _CRASH_PROMPTED_KEY = "crash_reports_prompted"
+
+    def _maybe_prompt_pending_crashes(self):
+        """V14.5.0: scan the log dir for unactioned crash files. If
+        any exist, prompt the user (per-file) to send / discard /
+        defer. Honors the opt-in setting — if the user hasn't
+        explicitly enabled crash reporting yet we ask them once before
+        offering to send.
+        """
+        try:
+            from .crash_reporter import list_pending_reports
+            from .persistence import log_dir
+        except Exception:
+            return
+        pending = list_pending_reports(log_dir())
+        if not pending:
+            return
+        log.info("Found %d pending crash report(s)", len(pending))
+        # First-launch opt-in: if the user hasn't been asked yet, ask
+        # now. They can change it later via Tools → Crash reporting…
+        if not bool(self.settings.value(self._CRASH_PROMPTED_KEY, False, bool)):
+            r = QMessageBox.question(
+                self, "Crash reports",
+                "Veloxa noticed an unhandled error from a previous "
+                "session.\n\nYou can help fix this kind of bug by "
+                "sending a crash report. Crash reports include the "
+                "error traceback and the last ~200 lines of the "
+                "session log; the username is removed from any file "
+                "paths.\n\n**No data is sent automatically** — the "
+                "report opens in your browser pre-filled so you can "
+                "review and remove anything before submitting on "
+                "GitHub.\n\nEnable crash reporting?",
+                QMessageBox.StandardButton.Yes
+                | QMessageBox.StandardButton.No)
+            self.settings.setValue(self._CRASH_PROMPTED_KEY, True)
+            self.settings.setValue(
+                self._CRASH_OPT_IN_KEY,
+                r == QMessageBox.StandardButton.Yes)
+        opted_in = bool(self.settings.value(
+            self._CRASH_OPT_IN_KEY, False, bool))
+        if not opted_in:
+            # Sweep the pending files so we don't keep re-prompting
+            # forever on every launch when the user said no.
+            try:
+                from .crash_reporter import mark_dismissed
+                for p in pending:
+                    mark_dismissed(p)
+            except Exception:
+                pass
+            return
+        # User is opted in — prompt for each unactioned crash file.
+        for crash_path in pending:
+            self._prompt_send_crash(crash_path)
+
+    def _prompt_send_crash(self, crash_path):
+        """One-shot dialog for a single crash file. The user picks:
+        Send → opens a pre-filled GitHub Issue URL in the browser
+        Discard → marks the file ``*.dismissed`` (no further prompts)
+        Later → leaves the file in place; we ask again next launch.
+        """
+        from .crash_reporter import (
+            build_issue_url, mark_reported, mark_dismissed,
+        )
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Send crash report?")
+        msg.setIcon(QMessageBox.Icon.Question)
+        msg.setText(
+            f"Veloxa caught an unhandled error in a previous session "
+            f"({crash_path.name}).\n\nOpen GitHub in your browser to "
+            f"send a pre-filled report? You can review and edit it "
+            f"before submitting — nothing is sent until you click "
+            f"\"Submit new issue\" on the GitHub page.")
+        send_btn = msg.addButton(
+            "Send report", QMessageBox.ButtonRole.AcceptRole)
+        later_btn = msg.addButton(
+            "Later", QMessageBox.ButtonRole.RejectRole)
+        msg.addButton("Discard", QMessageBox.ButtonRole.DestructiveRole)
+        msg.setDefaultButton(send_btn)
+        msg.exec()
+        clicked = msg.clickedButton()
+        if clicked is send_btn:
+            url = build_issue_url(
+                VELOXA_GITHUB_REPO, crash_path, VELOXA_APP_VERSION)
+            if not url:
+                QMessageBox.warning(
+                    self, "Send crash report",
+                    "Could not build the issue URL — the GitHub repo "
+                    "isn't configured.")
+                return
+            try:
+                from PyQt6.QtGui import QDesktopServices
+                from PyQt6.QtCore import QUrl
+                QDesktopServices.openUrl(QUrl(url))
+                mark_reported(crash_path)
+            except Exception as exc:
+                QMessageBox.warning(
+                    self, "Send crash report",
+                    f"Could not open the browser:\n\n{exc}")
+        elif clicked is later_btn:
+            return  # leave the file unactioned
+        else:
+            mark_dismissed(crash_path)
+
+    def _report_a_problem_manual(self):
+        """V14.5.0: build a crash-style report from the CURRENT session
+        log (even though nothing crashed) and offer the same browser
+        opt-in flow. Useful when the user hit a non-fatal weird thing
+        and wants to file it.
+        """
+        from .crash_reporter import write_crash_file, build_issue_url
+        from .persistence import log_dir
+        # Synthesise a fake "exception" so write_crash_file has a
+        # consistent body shape — the traceback is empty but the
+        # log-tail and version block still go in.
+        class _ManualReport(Exception):
+            pass
+        try:
+            raise _ManualReport(
+                "User-initiated report via Tools → Report a problem")
+        except _ManualReport:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+        crash_path = write_crash_file(
+            log_dir(), self.log_file_path, exc_type, exc_value, exc_tb,
+            VELOXA_APP_VERSION)
+        if not crash_path:
+            QMessageBox.warning(
+                self, "Report a problem",
+                "Could not write the report file. Open the log folder "
+                "manually and attach the session log to a GitHub "
+                "Issue instead.")
+            return
+        url = build_issue_url(
+            VELOXA_GITHUB_REPO, crash_path, VELOXA_APP_VERSION)
+        if not url:
+            QMessageBox.information(
+                self, "Report a problem",
+                "Report file written to:\n\n"
+                f"{crash_path}\n\nGitHub repo isn't configured, so "
+                "attach it manually to an issue.")
+            return
+        try:
+            from PyQt6.QtGui import QDesktopServices
+            from PyQt6.QtCore import QUrl
+            QDesktopServices.openUrl(QUrl(url))
+            from .crash_reporter import mark_reported
+            mark_reported(crash_path)
+        except Exception as exc:
+            QMessageBox.warning(
+                self, "Report a problem",
+                f"Could not open the browser:\n\n{exc}\n\nReport file:\n"
+                f"{crash_path}")
+
+    def _crash_reporting_settings(self):
+        """V14.5.0: toggle the opt-in for crash reports."""
+        currently_on = bool(self.settings.value(
+            self._CRASH_OPT_IN_KEY, False, bool))
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Crash reporting")
+        msg.setIcon(QMessageBox.Icon.Information)
+        state = "ON" if currently_on else "OFF"
+        msg.setText(
+            f"Crash reporting is currently {state}.\n\n"
+            "When ON: Veloxa watches for unhandled errors. On the next "
+            "launch after a crash, it offers to open GitHub in your "
+            "browser with a pre-filled report. No data is sent "
+            "automatically — you review and submit on github.com.\n\n"
+            "When OFF: crash files are written for your own logs but "
+            "never surfaced.\n\n"
+            "Toggle?")
+        toggle_btn = msg.addButton(
+            f"Turn {'OFF' if currently_on else 'ON'}",
+            QMessageBox.ButtonRole.AcceptRole)
+        msg.addButton("Keep as-is", QMessageBox.ButtonRole.RejectRole)
+        msg.exec()
+        if msg.clickedButton() is toggle_btn:
+            self.settings.setValue(
+                self._CRASH_OPT_IN_KEY, not currently_on)
+            self.settings.setValue(self._CRASH_PROMPTED_KEY, True)
+            self.status_lbl.setText(
+                f"Crash reporting: "
+                f"{'ON' if not currently_on else 'OFF'}")
 
     def _redetect_gpu_encoders(self):
         """V14.4.1: force a fresh GPU-encoder probe and update the UI.
@@ -1723,15 +1920,16 @@ class MainWindow(QMainWindow):
             ("Watch Folder…", self._open_watch_dialog),
             ("Manage Saved Data…", self._open_manage_data_dialog),
             ("Open Log Folder", self._open_log_folder),
-            # V14.4.1: force a fresh GPU-encoder probe. The encoders are
-            # detected at app launch via an FFmpeg probe and cached at
-            # %APPDATA%\Veloxa-VD\encoder_cache.json keyed by FFmpeg
-            # version AND machine ID. This menu item lets the user
-            # invalidate the cache and rerun the probe (useful if their
-            # GPU driver was just installed / updated after the app's
-            # first launch, or if they swapped GPUs).
+            # V14.4.1: force a fresh GPU-encoder probe.
             ("Re-detect GPU encoders…",
              self._redetect_gpu_encoders),
+            # V14.5.0: opt-in crash reporter. "Report a problem" lets the
+            # user file a GitHub Issue manually with the current log;
+            # "Crash reporting settings" lets them toggle the opt-in.
+            ("Report a problem…",
+             self._report_a_problem_manual),
+            ("Crash reporting settings…",
+             self._crash_reporting_settings),
         ]:
             act = QAction(label, self)
             act.setMenuRole(QAction.MenuRole.NoRole)
@@ -4920,16 +5118,31 @@ class MainWindow(QMainWindow):
         interrupted = sum(1 for d in items if d.get("status") == "encoding")
         crash_note = ""
         if interrupted:
-            crash_note = (f"\n\n{interrupted} item(s) were interrupted "
-                          "mid-encode (likely from an unexpected close or "
-                          "crash) and will be re-queued for re-attempt.")
-        r = QMessageBox.question(
-            self, "Restore Previous Queue",
+            crash_note = (
+                f"\n\n{interrupted} item(s) were interrupted mid-encode "
+                "(likely from an unexpected close or crash) and will be "
+                "re-queued from the start. Any partial output files from "
+                "those encodes will be overwritten by FFmpeg's -y flag "
+                "when you press Start.")
+        # V14.5.0: three-way dialog — Restore & Start lets the user
+        # pick up the interrupted batch with one click; Restore Only
+        # leaves the queue ready for review; Discard wipes it.
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Resume previous batch?")
+        msg.setIcon(QMessageBox.Icon.Question)
+        msg.setText(
             f"Found {len(items)} item(s) from the previous session "
             f"({len(actionable)} unfinished).{crash_note}\n\n"
-            "Restore the queue?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        if r != QMessageBox.StandardButton.Yes:
+            f"Resume the queue?")
+        start_btn = msg.addButton(
+            "Resume && Start", QMessageBox.ButtonRole.AcceptRole)
+        restore_btn = msg.addButton(
+            "Restore only", QMessageBox.ButtonRole.AcceptRole)
+        msg.addButton("Discard", QMessageBox.ButtonRole.DestructiveRole)
+        msg.setDefaultButton(start_btn)
+        msg.exec()
+        clicked = msg.clickedButton()
+        if clicked not in (start_btn, restore_btn):
             clear_queue_state()
             return
         for raw in items:
@@ -4954,6 +5167,31 @@ class MainWindow(QMainWindow):
         self._refresh_queue_stats()
         # UI-fix: paint selection styles on the restored rows.
         self._apply_row_selection_styles()
+        # V14.5.0: auto-start if the user picked "Resume & Start".
+        # Defer one event-loop tick so the queue widget has time to
+        # finish laying out the freshly-installed rows before
+        # _start_batch reads its current state.
+        if clicked is start_btn:
+            QTimer.singleShot(150, self._start_batch_if_pending)
+
+    def _start_batch_if_pending(self):
+        """V14.5.0: helper for the "Resume & Start" path. Only kicks
+        off the batch if there's at least one pending row and no
+        batch is already running — guards against double-clicks and
+        races with the auto-update dialog."""
+        if self.batch and self.batch.is_running():
+            return
+        any_pending = False
+        for i in range(self.file_list.count()):
+            d = self._item_data(self.file_list.item(i))
+            if d and d.status == "pending":
+                any_pending = True
+                break
+        if any_pending:
+            try:
+                self._start_batch()
+            except Exception as exc:
+                log.warning("Auto-start after resume failed: %s", exc)
 
     # ====================================================== persistence (settings)
 
