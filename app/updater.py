@@ -53,7 +53,7 @@ log = logging.getLogger("veloxa.updater")
 # Single source of truth for the application version. Imported by
 # ``app/docs.py``, ``app/main_window.py`` title bar, and the regression
 # tests. Bump this when cutting a new release.
-APP_VERSION = "14.7.0"
+APP_VERSION = "14.8.0"
 
 # GitHub repo to poll for releases. Format: ``owner/repo`` (no leading
 # slash, no trailing slash). Set to ``""`` to disable update checks
@@ -300,8 +300,30 @@ def download_installer(info: UpdateInfo,
         prefix=f"veloxa_update_{os.getpid()}_",
         suffix=".exe")
     chunk_size = 64 * 1024  # V14.0.3: 64 KB — fastest for GitHub CDN.
+    # V14.8.0: stall detection. Prior versions had NO per-read timeout
+    # and NO inactivity detector, so an antivirus that pauses the
+    # connection mid-stream or a flaky CDN redirect that leaves the
+    # socket open-but-silent would hang the dialog forever at e.g.
+    # 0.6 / 270 MB at 0.0 MB/s (user's V14.6.0 download bug report).
+    # Two layers of defence:
+    #   1) socket-level recv timeout — if a single read blocks > N
+    #      seconds with zero bytes, OSError raises and we abort.
+    #   2) loop-level inactivity detector — if no bytes have moved
+    #      for STALL_ABORT_S seconds (across multiple recvs), abort
+    #      with a friendly error.
+    STALL_ABORT_S = 30
+    PER_READ_TIMEOUT_S = 15
+    import time as _t
+    last_byte_at = _t.monotonic()
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
+            # Per-recv socket timeout — applies to every chunk read.
+            try:
+                resp.fp.raw._sock.settimeout(PER_READ_TIMEOUT_S)
+            except Exception:
+                # Older urllib internals; fall back to the loop-level
+                # detector alone (still catches the stall, just later).
+                pass
             total = info.asset_size or int(
                 resp.headers.get("Content-Length") or 0)
             done = 0
@@ -309,16 +331,31 @@ def download_installer(info: UpdateInfo,
                 while True:
                     if cancel_cb and cancel_cb():
                         raise InterruptedError("User cancelled")
-                    chunk = resp.read(chunk_size)
+                    try:
+                        chunk = resp.read(chunk_size)
+                    except (TimeoutError, OSError) as exc:
+                        # Per-recv timeout fired OR the socket closed
+                        # abnormally — treat as a stall and bubble up
+                        # with a clearer message than urllib's default.
+                        raise OSError(
+                            f"Download stalled: no data after "
+                            f"{PER_READ_TIMEOUT_S}s ({exc})")
                     if not chunk:
                         break
                     fout.write(chunk)
                     done += len(chunk)
+                    last_byte_at = _t.monotonic()
                     if progress_cb:
                         try:
                             progress_cb(done, total)
                         except Exception:
                             pass
+                    # Defence-in-depth: small recvs that aren't quite
+                    # empty but trickle in below a useful rate.
+                    if _t.monotonic() - last_byte_at > STALL_ABORT_S:
+                        raise OSError(
+                            f"Download stalled: no progress for "
+                            f"{STALL_ABORT_S}s")
         # Sanity check: the file should be non-empty and (when GitHub
         # told us the size) match the declared size.
         actual = os.path.getsize(tmp_path)

@@ -541,6 +541,27 @@ class JobRunner(QThread):
     def _run_ffmpeg(self, cmd: list, total_seconds: float,
                     cancel_cleanup_target: str = None,
                     pct_offset: float = 0.0, pct_scale: float = 1.0):
+        # V14.8.0: power-user FFmpeg-args passthrough. Anything in
+        # ``opts["custom_ffmpeg_args"]`` is parsed with shlex.split
+        # (so quoted values survive) and spliced just before the
+        # output file — every cmd construction in this module ends
+        # ``... -nostats <output_path>``, so the last cmd element is
+        # always the destination we want the custom flags to apply
+        # to. Doing the splice here means every call site picks it
+        # up without seven near-identical edits.
+        raw_custom = (self.opts.get("custom_ffmpeg_args") or "").strip()
+        if raw_custom and len(cmd) >= 2:
+            try:
+                import shlex
+                extra = shlex.split(raw_custom)
+            except ValueError as exc:
+                log.warning("Job %d: custom_ffmpeg_args parse error "
+                            "(%s); ignoring user override", self.idx, exc)
+                extra = []
+            if extra:
+                cmd = list(cmd[:-1]) + extra + [cmd[-1]]
+                log.info("Job %d: spliced %d custom ffmpeg arg(s) "
+                         "before output", self.idx, len(extra))
         log.debug("Job %d cmd: %s", self.idx, " ".join(repr(a) for a in cmd))
         # V14.3.0: CPU-slot jobs run with below-normal process priority
         # so they yield to the GUI thread and the OS scheduler under

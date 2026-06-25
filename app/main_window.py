@@ -292,6 +292,13 @@ class MainWindow(QMainWindow):
         # 3 s in so it doesn't pile on top of the auto-update modal
         # if there's also a pending update.
         QTimer.singleShot(3000, self._maybe_prompt_pending_crashes)
+        # V14.8.0: first-launch onboarding tour. Pops 3 message boxes
+        # over ~10 seconds highlighting Profiles, Audio Visuals, and
+        # the GPU status line — the three features users most often
+        # don't discover on their own. Gated on QSettings so it only
+        # fires once per install; can be re-run via Help → Show
+        # Onboarding Tour.
+        QTimer.singleShot(2200, self._maybe_show_onboarding_tour)
 
     # ============================================================== UI build
 
@@ -1619,6 +1626,28 @@ class MainWindow(QMainWindow):
         g.addWidget(self.use_cpu_alongside_gpu, r, 0, 1, 2)
         r += 1
 
+        # V14.8.0: power-user FFmpeg-args passthrough. Anything typed
+        # here is shlex-split and appended to every output encode cmd
+        # just before the destination filename, so it can set things
+        # like ``-profile:v high``, ``-x264-params keyint=120``,
+        # ``-color_primaries bt709 -color_trc bt709 -colorspace bt709``,
+        # or any other FFmpeg flag the GUI doesn't expose. Empty
+        # means "no override" — the default behaviour every existing
+        # user sees.
+        self.custom_ffmpeg_args = QLineEdit()
+        self.custom_ffmpeg_args.setPlaceholderText(
+            "(empty)  e.g.  -profile:v high -bf 2")
+        self.custom_ffmpeg_args.setToolTip(
+            "Power-user FFmpeg flags appended to every output encode "
+            "command just before the destination filename. Parsed with "
+            "shlex (use quotes for values that contain spaces). Leave "
+            "blank for default behaviour. Use only if you know what "
+            "you're typing — malformed flags will fail the encode "
+            "with FFmpeg's own error.")
+        g.addWidget(QLabel("Extra FFmpeg flags:"), r, 0)
+        g.addWidget(self.custom_ffmpeg_args, r, 1, 1, 4)
+        r += 1
+
         # Audio fade in / out (post-trim, post-speed).
         self.fade_in = QDoubleSpinBox()
         self.fade_in.setRange(0.0, 30.0); self.fade_in.setDecimals(2)
@@ -1979,6 +2008,10 @@ class MainWindow(QMainWindow):
             ("Installation Guide", self._show_install_guide),
             ("User Guide", self._show_help),
             ("License", self._show_license),
+            # V14.8.0: lets the user re-run the first-launch tour any
+            # time — useful when they brushed it off the first time
+            # without reading.
+            ("Show Onboarding Tour", self._run_onboarding_tour),
         ]:
             act = QAction(label, self)
             act.setMenuRole(QAction.MenuRole.NoRole)
@@ -2206,15 +2239,110 @@ class MainWindow(QMainWindow):
     def _on_no_update(self, manual: bool):
         if not manual:
             return  # silent on auto-check
-        QMessageBox.information(
-            self, "Veloxa Video Editor",
+        # V14.8.0: include an "Open Release Page" button so the user can
+        # still browse the latest release notes / re-download even when
+        # they're already current. Useful when they suspect their
+        # current install is broken and want to reinstall.
+        releases_url = f"https://github.com/{VELOXA_GITHUB_REPO}/releases"
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Icon.Information)
+        msg.setWindowTitle("Veloxa Video Editor")
+        msg.setTextFormat(Qt.TextFormat.RichText)
+        msg.setText(
             f"<b>You're up to date.</b><br><br>"
             f"Current version: <b>V{VELOXA_APP_VERSION}</b><br>"
             f"No newer release found at GitHub.<br><br>"
+            f"Release page (all versions): <br>"
+            f"<a href='{releases_url}'>{releases_url}</a><br><br>"
             f"<i>(If the check failed silently — offline, rate-limited, "
             f"private repo — this message looks the same as 'up to "
             f"date'. The Open Log Folder menu has the details.)</i>")
+        ok_btn = msg.addButton(QMessageBox.StandardButton.Ok)
+        open_btn = msg.addButton(
+            "Open Release Page", QMessageBox.ButtonRole.AcceptRole)
+        msg.setDefaultButton(ok_btn)
+        msg.exec()
+        if msg.clickedButton() is open_btn:
+            self._open_url_in_browser(releases_url)
         self.status_lbl.setText("")
+
+    # ============================================================ V14.8.0 helpers
+
+    def _open_url_in_browser(self, url: str) -> bool:
+        """V14.8.0: open ``url`` in the user's default browser. Safe to
+        call from anywhere — never raises. Returns True on success.
+        """
+        if not url:
+            return False
+        try:
+            from PyQt6.QtGui import QDesktopServices
+            from PyQt6.QtCore import QUrl
+            return bool(QDesktopServices.openUrl(QUrl(url)))
+        except Exception as exc:
+            log.warning("Could not open browser to %s: %s", url, exc)
+            return False
+
+    def _open_update_in_browser(self, info):
+        """V14.8.0: "Download in Browser" fallback. Opens the asset URL
+        directly so the user's browser handles the transfer (with its
+        own resume + retry behaviour). If asset_url isn't available,
+        falls back to the release page so the user can grab whichever
+        artefact they need."""
+        url = (getattr(info, "asset_url", "") or info.html_url
+               or f"https://github.com/{VELOXA_GITHUB_REPO}/releases/latest")
+        if not self._open_url_in_browser(url):
+            QMessageBox.information(
+                self, "Open in browser",
+                "Could not launch your browser automatically.\n\n"
+                f"Direct download URL:\n{url}")
+        else:
+            self.status_lbl.setText(
+                f"Opened V{info.version} download in your browser.")
+
+    def _show_download_failed_dialog(self, info):
+        """V14.8.0: replaces the V14.0.x plain-text "download failed"
+        warning with an actionable dialog that has explicit
+        Retry / Open Release Page / Direct Download Link / Cancel
+        buttons. Shown after a stall (V14.6.0 user report) or any
+        other download error — the URL is always one click away.
+        """
+        releases_url = (info.html_url
+                        or f"https://github.com/{VELOXA_GITHUB_REPO}/releases")
+        asset_url = getattr(info, "asset_url", "") or ""
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Icon.Warning)
+        msg.setWindowTitle("Download failed")
+        msg.setTextFormat(Qt.TextFormat.RichText)
+        msg.setText(
+            f"<b>V{info.version} could not be downloaded inside the app.</b>"
+            f"<br><br>"
+            f"This is usually a transient network or antivirus issue. "
+            f"You can retry, or download the installer from your "
+            f"browser instead — same file, same SHA.<br><br>"
+            f"Release page (recommended):<br>"
+            f"<a href='{releases_url}'>{releases_url}</a>"
+            + (f"<br><br>Direct installer link:<br>"
+               f"<a href='{asset_url}'>{asset_url}</a>"
+               if asset_url else ""))
+        retry_btn = msg.addButton(
+            "Retry Download", QMessageBox.ButtonRole.AcceptRole)
+        open_release_btn = msg.addButton(
+            "Open Release Page", QMessageBox.ButtonRole.AcceptRole)
+        direct_btn = None
+        if asset_url:
+            direct_btn = msg.addButton(
+                "Direct Installer Link", QMessageBox.ButtonRole.AcceptRole)
+        msg.addButton(
+            "Cancel", QMessageBox.ButtonRole.RejectRole)
+        msg.setDefaultButton(open_release_btn)
+        msg.exec()
+        clicked = msg.clickedButton()
+        if clicked is retry_btn:
+            self._run_update_install(info)
+        elif clicked is open_release_btn:
+            self._open_url_in_browser(releases_url)
+        elif direct_btn is not None and clicked is direct_btn:
+            self._open_url_in_browser(asset_url)
 
     def _on_update_found(self, info: UpdateInfo, manual: bool):
         # If the user previously chose "Skip this version" for THIS exact
@@ -2254,6 +2382,14 @@ class MainWindow(QMainWindow):
 
         download_btn = msg.addButton(
             "Download && Install", QMessageBox.ButtonRole.AcceptRole)
+        # V14.8.0: explicit "Download in Browser" fallback for users
+        # whose in-app download stalls (the V14.6.0 bug report —
+        # corporate AV or aggressive CDN routing leaves the socket
+        # open but silent). Opens the asset URL directly so the user's
+        # browser handles the transfer, with all of its own resume +
+        # retry behaviour.
+        browser_btn = msg.addButton(
+            "Download in Browser", QMessageBox.ButtonRole.AcceptRole)
         later_btn = msg.addButton(
             "Remind Me Later", QMessageBox.ButtonRole.RejectRole)
         skip_btn = msg.addButton(
@@ -2277,6 +2413,8 @@ class MainWindow(QMainWindow):
         clicked = msg.clickedButton()
         if clicked is download_btn:
             self._run_update_install(info)
+        elif clicked is browser_btn:
+            self._open_update_in_browser(info)
         elif clicked is skip_btn:
             self.settings.setValue("update_skip_version", info.version)
             self.status_lbl.setText(
@@ -2346,13 +2484,12 @@ class MainWindow(QMainWindow):
                 if prog.wasCanceled():
                     self.status_lbl.setText("Update cancelled.")
                 else:
-                    QMessageBox.warning(
-                        self, "Download failed",
-                        "<b>The installer could not be downloaded.</b>"
-                        "<br><br>"
-                        "Check your internet connection and try again. "
-                        "The release page is available at:<br>"
-                        f"<a href='{info.html_url}'>{info.html_url}</a>")
+                    # V14.8.0: rather than just printing the URL, offer
+                    # explicit "Open Release Page" / "Direct Download
+                    # Link" buttons so the user can fall back to their
+                    # browser. Default to the release page since that
+                    # lets them see release notes + every asset.
+                    self._show_download_failed_dialog(info)
                 return
 
             self._update_temp_path = path
@@ -2638,6 +2775,88 @@ class MainWindow(QMainWindow):
         if ext in VIDEO_EXTS:
             return "video"
         return None
+
+    # ============================================================ V14.8.0 onboarding
+
+    _ONBOARDING_SEEN_KEY = "onboarding_seen_v1"
+
+    def _maybe_show_onboarding_tour(self):
+        """V14.8.0: fire the 3-step tour on first launch only.
+        ``onboarding_seen_v1`` flag persisted under QSettings; bumping
+        the suffix in a future version forces a fresh tour if we add
+        more steps."""
+        if bool(self.settings.value(
+                self._ONBOARDING_SEEN_KEY, False, bool)):
+            return
+        self._run_onboarding_tour()
+        self.settings.setValue(self._ONBOARDING_SEEN_KEY, True)
+
+    def _run_onboarding_tour(self):
+        """V14.8.0: 3 message boxes pointing at the three features new
+        users most often miss. Sequential so each box anchors on the
+        previous one's dismissal — no risk of stacking and confusion.
+        Each can be dismissed with Esc / OK without breaking the flow.
+        """
+        # Step 1 — Profiles.
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Icon.Information)
+        msg.setWindowTitle("Welcome to Veloxa — 1 of 3")
+        msg.setTextFormat(Qt.TextFormat.RichText)
+        msg.setText(
+            "<b>Profiles save reusable settings.</b><br><br>"
+            "Set up trim, watermark, codec, and quality once, save it "
+            "as a profile (header dropdown → Save…), then apply it to "
+            "any future row with one click. Different rows in the "
+            "same batch can use different profiles — drag-drop a 30-"
+            "video TikTok batch alongside a 5-podcast batch, assign "
+            "each its profile, hit Start.")
+        ok = msg.addButton("Got it — next", QMessageBox.ButtonRole.AcceptRole)
+        skip = msg.addButton("Skip tour", QMessageBox.ButtonRole.RejectRole)
+        msg.setDefaultButton(ok)
+        msg.exec()
+        if msg.clickedButton() is skip:
+            return
+        # Step 2 — Audio Visuals.
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Icon.Information)
+        msg.setWindowTitle("Welcome to Veloxa — 2 of 3")
+        msg.setTextFormat(Qt.TextFormat.RichText)
+        msg.setText(
+            "<b>Audio Visuals turn audio files into video automatically."
+            "</b><br><br>"
+            "The Audio Visuals tab has six built-in templates "
+            "(Spectrum Bars, Waveform, Neon Audio Ring, Podcast "
+            "Layout, Spotify Canvas Style, Circular Spectrum). Pick "
+            "one and every audio file in your queue is converted to "
+            "video with that visual synthesised from the audio itself "
+            "— no per-row work. Or tick \"Use these visuals "
+            "(round-robin)\" with your own image / video files for "
+            "auto-assigned rotating backgrounds.")
+        ok = msg.addButton("Got it — next", QMessageBox.ButtonRole.AcceptRole)
+        skip = msg.addButton("Skip tour", QMessageBox.ButtonRole.RejectRole)
+        msg.setDefaultButton(ok)
+        msg.exec()
+        if msg.clickedButton() is skip:
+            return
+        # Step 3 — GPU status.
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Icon.Information)
+        msg.setWindowTitle("Welcome to Veloxa — 3 of 3")
+        msg.setTextFormat(Qt.TextFormat.RichText)
+        msg.setText(
+            "<b>Veloxa auto-detected your GPU encoders.</b><br><br>"
+            "Look at the status bar at the bottom-right of this "
+            "window. It tells you exactly which hardware "
+            "accelerators (NVIDIA NVENC / AMD AMF / Intel QSV / AV1) "
+            "are active on this PC — every install probes the local "
+            "FFmpeg the first time it launches so the choice is "
+            "always machine-specific. The (auto) encoder picks the "
+            "fastest one available; Settings → Output → Encoder lets "
+            "you override.<br><br>"
+            "If you ever swap GPU or drivers, Tools → Re-detect GPU "
+            "Encoders reruns the probe.")
+        msg.addButton("Got it", QMessageBox.ButtonRole.AcceptRole)
+        msg.exec()
 
     def _has_audio_template_active(self) -> bool:
         """V14.3.5: True iff the Audio Visuals tab has a non-'none'
@@ -3982,6 +4201,11 @@ class MainWindow(QMainWindow):
             # V14.3.0: parallel CPU encoder slot toggle.
             "use_cpu_alongside_gpu":
                 self.use_cpu_alongside_gpu.isChecked(),
+            # V14.8.0: power-user FFmpeg-args passthrough. Plain string
+            # — parsed via shlex.split at encode time in batch.py so
+            # quoted values survive intact.
+            "custom_ffmpeg_args":
+                self.custom_ffmpeg_args.text().strip(),
             # Split-on-length: limit each output's duration; oversized inputs
             # become Part1 / Part2 / ... at job-build time.
             "split_enabled": self.split_enabled.isChecked(),
@@ -4322,6 +4546,9 @@ class MainWindow(QMainWindow):
             "fade_in": float(self.fade_in.value()),
             "fade_out": float(self.fade_out.value()),
             "hw_decode": self.hw_decode.isChecked(),
+            # V14.8.0: power-user FFmpeg-args passthrough.
+            "custom_ffmpeg_args":
+                self.custom_ffmpeg_args.text().strip(),
             "split_enabled": self.split_enabled.isChecked(),
             "split_max_minutes": float(self.split_max_minutes.value()),
             "profile_visuals_enabled": self.profile_visuals_enabled.isChecked(),
@@ -4402,6 +4629,9 @@ class MainWindow(QMainWindow):
             self.fade_in.setValue(float(d.get("fade_in", 0.0) or 0.0))
             self.fade_out.setValue(float(d.get("fade_out", 0.0) or 0.0))
             self.hw_decode.setChecked(bool(d.get("hw_decode", True)))
+            # V14.8.0: profile-level custom FFmpeg args passthrough.
+            self.custom_ffmpeg_args.setText(
+                d.get("custom_ffmpeg_args", "") or "")
             # V14.3.0: profile-level persistence of the parallel CPU slot.
             self.use_cpu_alongside_gpu.setChecked(
                 bool(d.get("use_cpu_alongside_gpu", False)))
@@ -5393,6 +5623,9 @@ class MainWindow(QMainWindow):
             if isinstance(hw_val, str):
                 hw_val = hw_val.lower() in ("true", "1", "yes")
             self.hw_decode.setChecked(bool(hw_val))
+            # V14.8.0: restore custom FFmpeg-args passthrough.
+            self.custom_ffmpeg_args.setText(
+                s.value("custom_ffmpeg_args", "") or "")
             # V14.3.0: persisted parallel CPU encoder slot toggle.
             cpu_val = s.value("use_cpu_alongside_gpu", False)
             if isinstance(cpu_val, str):
@@ -5498,6 +5731,9 @@ class MainWindow(QMainWindow):
         s.setValue("fade_in", float(self.fade_in.value()))
         s.setValue("fade_out", float(self.fade_out.value()))
         s.setValue("hw_decode", self.hw_decode.isChecked())
+        # V14.8.0: persist custom FFmpeg-args passthrough.
+        s.setValue("custom_ffmpeg_args",
+                   self.custom_ffmpeg_args.text().strip())
         # V14.3.0: persist the CPU-slot toggle across sessions.
         s.setValue("use_cpu_alongside_gpu",
                    self.use_cpu_alongside_gpu.isChecked())

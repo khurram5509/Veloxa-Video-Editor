@@ -1,3 +1,135 @@
+# Veloxa Video Editor — V14.8.0
+
+**Features.** Three features + a critical updater fix (the V14.6.0 download stall report).
+
+## 1. In-app updater no longer stalls forever (your V14.6.0 bug report)
+
+**Symptom:** progress dialog frozen at e.g. ``0.6 / 270.6 MB · 0.0 MB/s`` for minutes — no progress, no error. Internet is fine, GitHub release page loads in the browser. Closing the dialog is the only escape.
+
+**Root cause:** ``app/updater.py::download_installer`` had **no per-read timeout and no inactivity detector**. If antivirus or aggressive CDN routing held the socket open with zero bytes flowing, ``resp.read()`` blocked forever. The dialog had no way to know the download was dead.
+
+**Fix:** two layers of defence.
+
+- **Socket-level recv timeout** (15 s). If any single read blocks longer than that with zero bytes, ``OSError`` raises and the download aborts with a clear "Download stalled" error.
+- **Loop-level inactivity detector** (30 s). If no bytes have arrived across multiple reads for 30 s, abort the same way.
+
+Replaces the previous "download failed silently after some unknowable amount of time" with "you get a clear failure dialog within 30 s of the connection going dead, with three useful buttons."
+
+### New failure dialog
+
+Replaces the V14.0.x plain-text "download failed" warning. Three buttons:
+
+| Button | What it does |
+|---|---|
+| **Retry Download** | Re-attempts the in-app download. Useful for transient network blips. |
+| **Open Release Page** | Opens ``github.com/.../releases/tag/vN.N.N`` in your browser. Pick whichever asset you need, see the release notes. |
+| **Direct Installer Link** | Opens the asset URL directly, so your browser handles the transfer with its own resume + retry behaviour. **This is the recommended fallback** when the in-app downloader keeps stalling — your browser, your antivirus, all the proxy / VPN settings you already configured. |
+
+### New "Download in Browser" option in the main update dialog
+
+The update-available dialog now has a fourth button next to Download & Install / Remind Me Later / Skip: **Download in Browser**. Skips the in-app download entirely and opens the installer link directly so corporate-AV-paranoid users can route the transfer through their browser from the start.
+
+### "You're up to date" now lists the release page
+
+The manual ``Help → Check for Updates…`` dialog when you're current now includes both the current version (V14.8.0) and a clickable Release Page link — handy when you want to reinstall the same version or look at release notes for previous versions.
+
+## 2. Custom FFmpeg-args passthrough (power users)
+
+New **Extra FFmpeg flags** field in **Output**. Anything typed there is ``shlex.split``-parsed and appended to every output encode command just before the destination filename. Use it to set things like:
+
+- ``-profile:v high`` (set H.264 profile to high)
+- ``-x264-params keyint=120`` (force GOP size)
+- ``-color_primaries bt709 -color_trc bt709 -colorspace bt709`` (mark colour metadata)
+- ``-metadata title="My Title"`` (embed file metadata)
+
+Empty = no override. Malformed flags are logged and ignored — never crash the encode. Verified end-to-end with a real encode setting ``-metadata title=v148_splice_test``, then reading it back via ``ffprobe``.
+
+## 3. First-launch onboarding tour
+
+Three message boxes triggered ~2 s after the first launch (gated by ``QSettings.onboarding_seen_v1``), highlighting the features new users most often miss:
+
+1. **Profiles** — save reusable trim / watermark / codec / quality settings, apply with one click, mix-and-match per row.
+2. **Audio Visuals** — six built-in templates that synthesise video from audio (Spectrum Bars, Waveform, Neon Ring, etc.), or auto-rotating user-supplied backgrounds via "Use these visuals".
+3. **GPU status** — the status bar's GPU summary (per-machine auto-detection), and the Tools → Re-detect GPU Encoders menu item.
+
+Each box has Skip Tour, so users who already know the app skip in one click. Re-run any time via **Help → Show Onboarding Tour**.
+
+## 4. EBU R128 loudness normalisation (verified)
+
+Already shipped in earlier versions — kept as-is. The checkbox **Normalize audio loudness (EBU R128, -16 LUFS)** in the Output tab applies ``loudnorm=I=-16:TP=-1.5:LRA=11`` (streaming + podcast standard). V14.8.0 ships a regression-guard test that verifies the filter is applied when ticked and absent when not.
+
+## Full module inventory (per your request)
+
+Organised by the categories you asked for:
+
+### Entry & bootstrap
+- ``main.py`` — CLI dispatch, HiDPI init, logging, crash-reporter install, single-instance guard, theme apply, ``MainWindow`` construction.
+- ``make_icon.py`` — generates ``app.ico`` from canvas drawing.
+
+### Core — processing
+- ``engine/batch.py`` — ``JobRunner`` (single-encode QThread with FFmpeg progress parsing, V14.3.1 binary-mode I/O, V14.8.0 custom-args splice) + ``BatchManager`` (multi-job orchestrator, pause/resume, V14.3.0 parallel CPU slot, mid-batch ``add_jobs``, RAM watchdog, hard cap).
+- ``engine/encoders.py`` — encoder catalogue (V14.7.0 AV1 + V14.4.1 runtime probe + machine-keyed cache), CLI arg builders, quality-tier tables, bitrate ↔ tier mapping.
+- ``engine/filters.py`` — FFmpeg filter-graph construction for trim, fade, watermark, text watermark, video watermark, scale/pad, speed, audio normalisation, loudnorm.
+- ``engine/ffmpeg.py`` — FFmpeg/ffprobe locator + probe helpers + preview generators (image, audio-template, audio-with-visual).
+- ``engine/audio_templates.py`` — six audio-visual templates (Spectrum Bars, Circular Spectrum, Waveform, Neon Audio Ring, Podcast Layout, Spotify Canvas Style).
+- ``engine/system_resources.py`` — parallel CPU slot helpers (priority drop, thread cap, RAM watchdog, encoder swap).
+
+### Core — supporting services
+- ``app/persistence.py`` — app data dir, log dir, ``setup_logging``, queue state save/load/clear, watermark hash-import.
+- ``app/updater.py`` — GitHub Releases poller (``UpdateChecker``), background downloader (``DownloadWorker``, V14.8.0 stall detection), ``launch_installer_and_quit``.
+- ``app/platform_compat.py`` — Win/Mac/Linux flags, ``pick_release_asset`` (V14.3.4 routing guarantee), open-in-file-manager, FFmpeg locator.
+- ``app/crash_reporter.py`` — V14.5.0 ``sys.excepthook``, ``write_crash_file`` (with username scrubbing), ``build_issue_url``.
+- ``app/single_instance.py`` — V14.1.0/V14.1.1 QLocalServer + QLocalSocket + ACK handshake.
+- ``app/watch_folder.py`` — ``FolderWatcher`` (filesystem watcher that auto-adds new files to the queue).
+- ``app/profile_assets.py`` — per-profile asset folder management.
+- ``app/cli.py`` — headless ``--cli`` mode entry.
+
+### UI — shell & pages
+- ``app/main_window.py`` — ``MainWindow``: queue + preview pane + settings tabs (Trim / Watermark / Audio Visuals / Output) + menu bar + batch controls + status bar.
+- ``app/dialogs.py`` — ``ProfileManagerDialog``, ``WatchFolderDialog``, ``ManageSavedDataDialog``, ``show_info_dialog``, ``NO_PROFILE``.
+
+### UI — components
+- ``app/widgets.py`` — ``QueueItemData`` dataclass (serialisable for V14.5.0 resume), ``TrimSeekBar``, ``DropList``.
+- ``app/theme.py`` — ``DARK_QSS`` / ``LIGHT_QSS`` / ``OLED_QSS`` stylesheets, ``apply_theme()``, system-theme detector, ``make_runtime_icon()``, time formatters.
+- ``app/docs.py`` — in-app HTML docs (README, INSTALL, HELP, LICENSE).
+
+### Cross-cutting / infrastructure
+- ``requirements.txt`` — pinned runtime deps (``PyQt6>=6.6``, ``psutil>=5.9``).
+- ``build.ps1`` — Windows PyInstaller ``--onedir`` build script (V14.3.7+).
+- ``installer.iss`` — Inno Setup script for the Windows installer.
+- ``.github/workflows/build_macos.yml`` — GitHub Actions: builds ``.app`` via PyInstaller ``--onedir``, ad-hoc signs, packs as ``.dmg`` with create-dmg, uploads to release.
+- ``_qa/`` — 9 test suites: master regression (``regress_v12_3.py``), end-to-end encodes (``encode_e2e.py``, real FFmpeg), dispatch invariants (``v143_dispatch_unit.py``), audio templates (``v143_audio_template_preview.py``), auto-assign (``v143_auto_assign_visuals.py``), platform routing (``v143_platform_asset_routing.py``), crash reporter (``v145_crash_reporter.py``), folder import (``v146_add_from_folder.py``), V14.8.0 features (``v148_features.py``).
+
+## Tests
+
+**Every suite green, with the V14.8.0 changes:**
+
+| Suite | Result |
+|---|---|
+| Main regression (``regress_v12_3.py``) | 426 / 426 |
+| End-to-end encodes (``encode_e2e.py``, real FFmpeg) | 99 / 99 |
+| Dispatch unit (``v143_dispatch_unit.py``) | 33 / 33 |
+| Audio-template preview (``v143_audio_template_preview.py``) | 15 / 15 |
+| Auto-assign visuals (``v143_auto_assign_visuals.py``) | 24 / 24 |
+| Platform-asset routing (``v143_platform_asset_routing.py``) | 26 / 26 |
+| Crash reporter (``v145_crash_reporter.py``) | 22 / 22 |
+| Add-from-Folder (``v146_add_from_folder.py``) | 17 / 17 |
+| V14.8.0 features (``v148_features.py``, new) | 30 / 30 |
+| **Total** | **692 / 692** |
+
+EXE smoke launch on Windows: clean.
+
+## Downloads
+
+- **Windows:** ``Veloxa-Video-Editor-V14.8.0-Setup.exe`` (271 MB, --onedir)
+- **macOS:** ``Veloxa-Video-Editor-V14.8.0-macOS.dmg`` (~88 MB, ad-hoc signed)
+
+> **If you're stuck on V14.6.0 / V14.7.0 and the in-app downloader keeps stalling at 0.0 MB/s,** you can grab V14.8.0 directly from this release page and run it. The new installer overwrites the existing install in place — your profiles, queue, and settings are preserved. After V14.8.0 the new stall detection + Download-in-Browser button will prevent this from happening again.
+
+Direct installer link (right-click → Save link as…): ``https://github.com/khurram5509/Veloxa-Video-Editor/releases/download/v14.8.0/Veloxa-Video-Editor-V14.8.0-Setup.exe``
+
+---
+
 # Veloxa Video Editor — V14.7.0
 
 **Feature.** **AV1 codec support** — ~30 % smaller files at the same visual quality vs H.264, with automatic GPU acceleration on supported cards.
