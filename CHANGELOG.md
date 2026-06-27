@@ -1,3 +1,34 @@
+# Veloxa Video Editor — V14.8.1
+
+**Hot-fix.** Removed the duplicate **"Detected: NVIDIA, CPU + CPU"** label from the Output tab — the same info is already shown more accurately by the V14.4.1 status-bar GPU summary, and the Output-tab version had a stale rendering bug.
+
+## What was broken (your screenshot)
+
+The Output tab showed *"Detected: NVIDIA, CPU + CPU"* at the bottom — two issues:
+
+1. **Duplicate.** Since V14.4.1 the status bar at the bottom of the window already shows the same info more accurately (e.g. *"GPU acceleration: NVIDIA NVENC (incl. AV1) (auto-detected). Settings → Output → Encoder lets you override."*). Two labels saying the same thing in different places.
+2. **Rendering bug.** When V14.7.0 added ``libsvtav1`` to the encoder catalog, the Output-tab label didn't get the memo. ``libsvtav1`` isn't in ``CPU_ENCODERS`` (which is only ``["libx264", "libx265"]``), so it fell into the "GPU" branch. Its label first word is ``"CPU"`` (from *"CPU (SVT-AV1)"*), and the code appends ``" + CPU"`` at the end → the literal ``"NVIDIA, CPU + CPU"`` you saw.
+
+## Fix
+
+Deleted the duplicate label entirely. **Single source of truth:** the status bar at the bottom of the window. The "Tip: GPU encoders may not benefit from >1 concurrent job" guidance below it is kept since it's actually useful advice, not duplicate info.
+
+## Tests
+
+- 426 / 426 main regression probes pass.
+- 30 / 30 V14.8.0 feature probes pass.
+- 692 / 692 across all 9 suites still pass (no test depended on the removed label).
+- EXE smoke launch on Windows: clean.
+
+## Downloads
+
+- **Windows:** ``Veloxa-Video-Editor-V14.8.1-Setup.exe`` (271 MB, --onedir)
+- **macOS:** ``Veloxa-Video-Editor-V14.8.1-macOS.dmg`` (~88 MB, ad-hoc signed)
+
+Existing users will be offered V14.8.1 via Help → Check for Updates… (Mac → ``.dmg``, Windows → ``.exe`` per the V14.3.4 routing guarantee). The V14.8.0 stall detection + Direct Installer Link fallback are still in place, so if the in-app downloader ever hangs you've got the browser-fallback button within 30 s.
+
+---
+
 # Veloxa Video Editor — V14.8.0
 
 **Features.** Three features + a critical updater fix (the V14.6.0 download stall report).

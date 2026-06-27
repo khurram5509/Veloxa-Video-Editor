@@ -1568,24 +1568,15 @@ class MainWindow(QMainWindow):
         g.addWidget(self.speed_value, r, 1)
         r += 1
 
-        gpu_count = sum(1 for n in self.available_encoders
-                        if n not in CPU_ENCODERS)
-        if gpu_count == 0:
-            enc_status = "Detected: CPU only (no GPU encoder available)."
-        else:
-            unique = []
-            for n in self.available_encoders:
-                if n in CPU_ENCODERS:
-                    continue
-                lbl = ENCODER_LABELS.get(n, n).split(" ", 1)[0]
-                if lbl not in unique:
-                    unique.append(lbl)
-            enc_status = "Detected: " + ", ".join(unique) + " + CPU"
-        self.encoder_status_lbl = QLabel(enc_status)
-        self.encoder_status_lbl.setProperty("role", "muted")
-        self.encoder_status_lbl.setWordWrap(True)
-        g.addWidget(self.encoder_status_lbl, r, 0, 1, 2)
-        r += 1
+        # V14.8.1: removed the duplicate "Detected: ..." label that used
+        # to live here. The same info is shown more accurately by the
+        # status-bar GPU summary added in V14.4.1
+        # (``_describe_gpu_status``), so two labels were repeating the
+        # same content — and the Output-tab version had a stale bug
+        # where V14.7.0's libsvtav1 (which isn't in CPU_ENCODERS)
+        # rendered as "CPU + CPU" in the right-hand suffix.
+        #
+        # Single source of truth now: the bottom-of-window status bar.
 
         gpu_note = QLabel(
             "Tip: GPU encoders may not benefit from >1 concurrent job. "
