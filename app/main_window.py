@@ -15,12 +15,12 @@ from PyQt6.QtGui import (
     QShortcut,
 )
 from PyQt6.QtWidgets import (
-    QApplication, QCheckBox, QColorDialog, QComboBox, QDoubleSpinBox,
-    QFileDialog, QFrame, QGridLayout, QGroupBox, QHBoxLayout, QInputDialog,
-    QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMenu,
-    QMessageBox, QProgressBar, QProgressDialog, QPushButton, QScrollArea,
-    QSlider, QSpinBox, QSplitter, QSystemTrayIcon, QTabWidget, QVBoxLayout,
-    QWidget,
+    QApplication, QCheckBox, QColorDialog, QComboBox, QDialog,
+    QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFrame, QGridLayout,
+    QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
+    QListWidgetItem, QMainWindow, QMenu, QMessageBox, QProgressBar,
+    QProgressDialog, QPushButton, QScrollArea, QSlider, QSpinBox,
+    QSplitter, QSystemTrayIcon, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from engine import (
@@ -2727,10 +2727,215 @@ class MainWindow(QMainWindow):
             return
         log.info("Folder scan of %s found %d supported file(s)",
                  folder, len(collected))
+
+        # V14.9.0: multi-format picker. When the scan turns up more than
+        # one unique extension (e.g. .mp4 + .mov + .mkv + .mp3), show a
+        # checklist so the user can trim the import down to just the
+        # formats they actually want. Optionally lets them PERMANENTLY
+        # delete every non-chosen file from the folder tree — same
+        # feature you get on a memory-card offloader when you want to
+        # keep only the H.264 masters and dump the RAW / audio dupes.
+        unique_exts = sorted({Path(p).suffix.lower() for p in collected})
+        if len(unique_exts) > 1:
+            chosen, delete_others = self._prompt_folder_format_picker(
+                folder, collected, unique_exts)
+            if chosen is None:
+                # User cancelled the picker.
+                self.status_lbl.setText("Folder import cancelled.")
+                return
+            if not chosen:
+                # User unticked everything → nothing to import.
+                self.status_lbl.setText(
+                    "Folder import: no formats selected.")
+                return
+            chosen_set = {e.lower() for e in chosen}
+            filtered = [p for p in collected
+                        if Path(p).suffix.lower() in chosen_set]
+            if delete_others:
+                # NUCLEAR scope per user answer: delete every file in
+                # the folder tree that isn't the chosen format(s),
+                # including sidecar / non-media files. Confirmed once
+                # more here with a scary explicit dialog.
+                ok, n_deleted = self._delete_non_chosen_from_folder(
+                    folder, chosen_set)
+                if not ok:
+                    # User backed out at the confirm step. Continue
+                    # with the import anyway — we already have the
+                    # filtered list.
+                    log.info("Folder import: delete step cancelled; "
+                             "proceeding with import only")
+                else:
+                    log.info("Folder import: permanently deleted %d "
+                             "non-chosen file(s)", n_deleted)
+            collected = filtered
+            if not collected:
+                self.status_lbl.setText(
+                    "Folder import: no files matched the chosen "
+                    "format(s).")
+                return
+
         self.status_lbl.setText(
             f"Adding {len(collected)} file(s) from folder…")
         QApplication.processEvents()
         self._add_files(collected)
+
+    def _prompt_folder_format_picker(self, folder: str,
+                                     collected: list,
+                                     unique_exts: list):
+        """V14.9.0: dialog for the multi-format Add-from-Folder flow.
+
+        Returns ``(chosen_extensions, delete_others)`` where:
+
+        * ``chosen_extensions`` is a list of extension strings
+          (``.mp4`` etc.) — every ext the user ticked. Empty list
+          means "user unticked everything"; ``None`` means "user
+          hit Cancel / closed the dialog".
+        * ``delete_others`` is True iff the user ticked the "delete
+          all other files" box AND accepted the confirm dialog. The
+          confirm is fired inside this method so the caller can act
+          on a clean boolean.
+        """
+        # Count how many files carry each extension so the checkbox
+        # labels are informative ("mp4 (23 files)").
+        counts: dict = {}
+        for p in collected:
+            e = Path(p).suffix.lower()
+            counts[e] = counts.get(e, 0) + 1
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Add from Folder — pick file formats")
+        dlg.setModal(True)
+        v = QVBoxLayout(dlg)
+        v.setSpacing(10)
+        header = QLabel(
+            f"<b>Multiple file formats found</b> in:<br>"
+            f"<code>{folder}</code><br><br>"
+            f"Tick the format(s) you want to import into the queue. "
+            f"Unchecked formats stay on disk but aren't added to the "
+            f"queue (unless you also enable delete below).")
+        header.setWordWrap(True)
+        v.addWidget(header)
+
+        # Checkbox per extension. Default: everything ticked (no
+        # surprises on Enter).
+        ext_boxes: list = []
+        box_wrap = QGroupBox("Import which formats?")
+        box_layout = QVBoxLayout(box_wrap)
+        for ext in unique_exts:
+            cb = QCheckBox(f"{ext}   ({counts[ext]} file"
+                           f"{'s' if counts[ext] != 1 else ''})")
+            cb.setChecked(True)
+            ext_boxes.append((ext, cb))
+            box_layout.addWidget(cb)
+        v.addWidget(box_wrap)
+
+        delete_box = QCheckBox(
+            "⚠ Also PERMANENTLY DELETE every other file in the folder "
+            "and its subfolders (including subtitles, thumbnails, "
+            "notes, etc.)")
+        delete_box.setToolTip(
+            "Danger: this deletes real files from disk with os.remove — "
+            "NOT to the Recycle Bin. You'll get one more explicit "
+            "confirmation with the exact count before anything is "
+            "removed.")
+        v.addWidget(delete_box)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel)
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Import")
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        v.addWidget(buttons)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return None, False
+
+        chosen = [ext for ext, cb in ext_boxes if cb.isChecked()]
+        return chosen, delete_box.isChecked()
+
+    def _delete_non_chosen_from_folder(self, folder: str,
+                                       chosen_ext_set: set) -> tuple:
+        """V14.9.0: PERMANENTLY delete every file in ``folder`` and its
+        subfolders whose extension is NOT in ``chosen_ext_set``.
+
+        Two-step confirm:
+
+        1. This method fires an explicit "delete N files permanently"
+           dialog listing the count + first 5 example paths.
+        2. Only if the user accepts do we call ``os.remove`` per file
+           (per-file try/except so one permission-denied doesn't kill
+           the run).
+
+        Returns ``(user_confirmed, files_deleted_count)``. When the
+        user cancels the confirm, returns ``(False, 0)`` and no file
+        is touched.
+        """
+        # Enumerate the doomed files first so the confirm dialog can
+        # show a count + samples. ``followlinks=False`` so a recursive
+        # symlink can't blow up the walk (mirrors V14.6.0 scanner).
+        doomed: list = []
+        try:
+            for root, dirs, files in os.walk(folder, followlinks=False):
+                for name in files:
+                    if Path(name).suffix.lower() in chosen_ext_set:
+                        continue
+                    doomed.append(os.path.join(root, name))
+        except Exception as exc:
+            log.warning("Folder walk for delete failed: %s", exc)
+            QMessageBox.warning(
+                self, "Add from Folder — delete",
+                f"Could not enumerate files to delete:\n\n{exc}")
+            return False, 0
+
+        if not doomed:
+            log.info("Folder import: no files to delete (folder only "
+                     "contained the chosen formats)")
+            return True, 0
+
+        sample = "\n".join(f"  • {p}" for p in doomed[:5])
+        more = (f"\n  … and {len(doomed) - 5} more"
+                if len(doomed) > 5 else "")
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Icon.Warning)
+        msg.setWindowTitle("Confirm permanent deletion")
+        msg.setTextFormat(Qt.TextFormat.PlainText)
+        msg.setText(
+            f"About to PERMANENTLY DELETE {len(doomed)} file(s) from "
+            f"{folder} and its subfolders.\n\n"
+            f"This is NOT the Recycle Bin — files are removed with "
+            f"os.remove and cannot be undone from within Veloxa.\n\n"
+            f"Sample of files that will be deleted:\n{sample}{more}")
+        del_btn = msg.addButton(
+            f"Delete {len(doomed)} file(s) permanently",
+            QMessageBox.ButtonRole.DestructiveRole)
+        cancel_btn = msg.addButton(
+            "Cancel — keep every file",
+            QMessageBox.ButtonRole.RejectRole)
+        msg.setDefaultButton(cancel_btn)
+        msg.exec()
+        if msg.clickedButton() is not del_btn:
+            return False, 0
+
+        # Actual deletion. Per-file try/except so one locked file
+        # doesn't abort the sweep.
+        n_deleted = 0
+        n_failed = 0
+        for p in doomed:
+            try:
+                os.remove(p)
+                n_deleted += 1
+            except OSError as exc:
+                n_failed += 1
+                log.info("Could not delete %s: %s", p, exc)
+        if n_failed:
+            self.status_lbl.setText(
+                f"Deleted {n_deleted} file(s); {n_failed} could not "
+                f"be removed (log has details).")
+        else:
+            self.status_lbl.setText(
+                f"Deleted {n_deleted} file(s) permanently.")
+        return True, n_deleted
 
     def _collect_supported_files(self, folder: str,
                                  max_files: int = 100000) -> list:

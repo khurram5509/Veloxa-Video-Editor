@@ -5,7 +5,7 @@
 2. Custom FFmpeg-args passthrough: shlex.split parses correctly, the
    splice fires in JobRunner._run_ffmpeg, malformed args fail safely.
 3. EBU R128 loudnorm is still wired through the audio filter chain
-   (regression guard — checkbox sets the right filter).
+   (regression guard -- checkbox sets the right filter).
 4. Onboarding tour gated by QSettings; second launch silent.
 5. Update dialog has the Download-in-Browser / Open-Release-Page
    buttons + helpers.
@@ -26,7 +26,7 @@ def check(name, ok, detail=""):
 
 print()
 print("=" * 72)
-print("V14.8.0 — feature tests")
+print("V14.8.0 -- feature tests")
 print("=" * 72)
 
 
@@ -80,7 +80,7 @@ else:
               "'v148_splice_test')",
               p.stdout.strip() == "v148_splice_test")
 
-# Malformed custom args should NOT crash — should be logged and ignored.
+# Malformed custom args should NOT crash -- should be logged and ignored.
 from engine.batch import JobRunner
 import inspect
 src_run = inspect.getsource(JobRunner._run_ffmpeg)
@@ -186,7 +186,7 @@ print(f"Total: {len(PASS)+len(FAIL)}    Pass: {len(PASS)}    Fail: {len(FAIL)}")
 if FAIL:
     print()
     for n, d in FAIL:
-        print(f"  FAIL  {n}" + (f" — {d}" if d else ""))
+        print(f"  FAIL  {n}" + (f" -- {d}" if d else ""))
     sys.exit(1)
 print("All V14.8.0 feature tests PASS.")
 sys.exit(0)

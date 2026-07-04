@@ -4,8 +4,8 @@ Stubs JobRunner so BatchManager's real _dispatch / _start_next /
 add_jobs / set_use_cpu_slot run end-to-end without spawning ffmpeg.
 
 Validates:
-  1. CPU slot OFF → only ``max_concurrent`` jobs ever run.
-  2. CPU slot ON  → one extra slot opens beyond max_concurrent,
+  1. CPU slot OFF -> only ``max_concurrent`` jobs ever run.
+  2. CPU slot ON  -> one extra slot opens beyond max_concurrent,
                     and that runner gets libx264/libx265 + _cpu_slot.
   3. HARD_CAP_CONCURRENT (=4) clamps effective_concurrency.
   4. Live toggle ON mid-batch spawns the extra slot on the next tick.
@@ -56,7 +56,7 @@ class FakeRunner(QObject):
         self.idx = idx
         self.src = src
         self.dst = dst
-        # The dispatcher passes either per_job_opts or self.opts — the
+        # The dispatcher passes either per_job_opts or self.opts -- the
         # real JobRunner uses per_job_opts if provided. For test
         # assertions we want to inspect whichever set was applied.
         self.opts = dict(per_job_opts) if per_job_opts else dict(opts)
@@ -137,7 +137,7 @@ check("ON: CPU slot runner carries _cpu_slot=True",
 gpu_runners = [r for r in FakeRunner.instances
                if r.idx not in mgr._active_cpu]
 # Note: GPU slots don't get a per_job_opts override, so r.opts will be
-# the main self.opts dict — encoder == h264_nvenc, no _cpu_slot.
+# the main self.opts dict -- encoder == h264_nvenc, no _cpu_slot.
 check("ON: GPU slot runners NOT marked _cpu_slot",
       all(not r.opts.get("_cpu_slot") for r in gpu_runners))
 
@@ -281,7 +281,7 @@ print(f"Total: {len(PASS)+len(FAIL)}    Pass: {len(PASS)}    Fail: {len(FAIL)}")
 if FAIL:
     print()
     for n, d in FAIL:
-        print(f"  FAIL  {n}" + (f" — {d}" if d else ""))
+        print(f"  FAIL  {n}" + (f" -- {d}" if d else ""))
     sys.exit(1)
 print("All V14.3.0 dispatch unit-tests PASS.")
 sys.exit(0)

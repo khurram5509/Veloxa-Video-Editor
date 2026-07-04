@@ -31,7 +31,7 @@ fixt = Path(tempfile.mkdtemp(prefix="veloxa_addfolder_"))
 (fixt / "02_root_audio.mp3").write_bytes(b"\0" * 100)
 (fixt / "notes.srt").write_text("sub", encoding="utf-8")
 # Subfolder season01: 2 videos + 1 image (image must be ignored at
-# folder-add — it's not in ALL_INPUT_EXTS).
+# folder-add -- it's not in ALL_INPUT_EXTS).
 s1 = fixt / "Season01"
 s1.mkdir()
 (s1 / "ep01.mkv").write_bytes(b"\0" * 100)
@@ -43,7 +43,7 @@ nested.mkdir()
 (nested / "interview.wav").write_bytes(b"\0" * 100)
 (nested / "behind_the_scenes.mov").write_bytes(b"\0" * 100)
 (nested / "credits.docx").write_bytes(b"\0" * 100)
-# Empty subfolder — must not break the walk.
+# Empty subfolder -- must not break the walk.
 (fixt / "empty_dir").mkdir()
 
 
@@ -57,7 +57,7 @@ collect = MainWindow._collect_supported_files.__get__(stub)
 
 print()
 print("=" * 72)
-print("V14.6.0 — Add from Folder (recursive scan)")
+print("V14.6.0 -- Add from Folder (recursive scan)")
 print("=" * 72)
 
 
@@ -165,7 +165,7 @@ print(f"Total: {len(PASS)+len(FAIL)}    Pass: {len(PASS)}    Fail: {len(FAIL)}")
 if FAIL:
     print()
     for n, d in FAIL:
-        print(f"  FAIL  {n}" + (f" — {d}" if d else ""))
+        print(f"  FAIL  {n}" + (f" -- {d}" if d else ""))
     sys.exit(1)
 print("All Add-from-Folder checks PASS.")
 sys.exit(0)

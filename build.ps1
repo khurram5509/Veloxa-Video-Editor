@@ -1,7 +1,7 @@
-# Build Veloxa Video Editor V14.8.1 as a Windows --onedir bundle.
+# Build Veloxa Video Editor V14.9.0 as a Windows --onedir bundle.
 # Run from project root:  .\build.ps1
 #
-# V14.8.1: switched from --onefile to --onedir because --onefile's
+# V14.9.0: switched from --onefile to --onedir because --onefile's
 # bootloader extracts ~400 MB of bundled code to %TEMP%\_MEI{random}
 # at every launch — right after an in-app update, Windows Defender
 # is still scanning the freshly-written EXE and holds file handles,
@@ -33,15 +33,15 @@ if (Test-Path .\app.ico) {
     $iconFlag = @("--icon", "app.ico")
 }
 
-# --onedir: produces dist\Veloxa-Video-Editor-V14.8.1\
-#   ├── Veloxa-Video-Editor-V14.8.1.exe   (small launcher)
+# --onedir: produces dist\Veloxa-Video-Editor-V14.9.0\
+#   ├── Veloxa-Video-Editor-V14.9.0.exe   (small launcher)
 #   ├── _internal\python314.dll
 #   ├── _internal\Qt6Core.dll
 #   └── ...several hundred support files
 # --paths . lets PyInstaller resolve our local `engine` and `app`
 # packages without an installed-distribution lookup.
 pyinstaller --noconfirm --onedir --windowed `
-    --name "Veloxa-Video-Editor-V14.8.1" `
+    --name "Veloxa-Video-Editor-V14.9.0" `
     --paths . `
     --add-data "ffmpeg;ffmpeg" `
     --add-data "app.ico;." `
@@ -49,5 +49,5 @@ pyinstaller --noconfirm --onedir --windowed `
     main.py
 
 Write-Host ""
-Write-Host "Build complete: dist\Veloxa-Video-Editor-V14.8.1\" -ForegroundColor Green
+Write-Host "Build complete: dist\Veloxa-Video-Editor-V14.9.0\" -ForegroundColor Green
 Write-Host "Reminder: place ffmpeg.exe and ffprobe.exe in the 'ffmpeg' folder before building." -ForegroundColor Yellow

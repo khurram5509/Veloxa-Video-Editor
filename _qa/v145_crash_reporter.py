@@ -38,7 +38,7 @@ log_dir.mkdir()
 
 print()
 print("=" * 72)
-print("V14.5.0 — crash reporter")
+print("V14.5.0 -- crash reporter")
 print("=" * 72)
 
 
@@ -64,7 +64,7 @@ print()
 print("[2] write_crash_file produces a usable report")
 # Build a real exception with a traceback.
 try:
-    raise RuntimeError(f"boom — touched {home}/secret.mp4")
+    raise RuntimeError(f"boom -- touched {home}/secret.mp4")
 except RuntimeError:
     exc_type, exc_value, exc_tb = sys.exc_info()
 crash = write_crash_file(log_dir, None, exc_type, exc_value, exc_tb,
@@ -175,7 +175,7 @@ print(f"Total: {len(PASS)+len(FAIL)}    Pass: {len(PASS)}    Fail: {len(FAIL)}")
 if FAIL:
     print()
     for n, d in FAIL:
-        print(f"  FAIL  {n}" + (f" — {d}" if d else ""))
+        print(f"  FAIL  {n}" + (f" -- {d}" if d else ""))
     sys.exit(1)
 print("All crash-reporter checks PASS.")
 sys.exit(0)

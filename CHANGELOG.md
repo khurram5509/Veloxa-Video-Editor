@@ -1,3 +1,48 @@
+# Veloxa Video Editor — V14.9.0
+
+**Feature.** *Add from Folder* now asks you which format to import when a folder holds a mix of file types — and can permanently delete everything else in one sweep.
+
+## The scenario
+
+You point *Add from Folder* at, say, `D:\Shoot-2026-07-03\`. Inside are 87 `.mp4` deliverables, 87 matching `.MOV` originals from the camera, `.jpg` sidecar thumbnails, `.srt` transcripts, and a `notes.docx`. Before V14.9.0 the app just imported every media file it recognised — so both `.mp4` **and** `.MOV` versions of each clip landed in the queue, double-encoding was one wrong click away, and cleaning up the folder afterward was manual.
+
+## What's new
+
+When the recursive scan detects **more than one file extension**, a picker dialog appears listing each unique extension found (`.mp4`, `.mov`, `.jpg`, `.srt`, `.docx`, `.txt`, …) with a checkbox next to each. Every box is ticked by default — untick the ones you don't want. Only files matching a ticked extension get added to the queue.
+
+Below the extension list is a second, unticked-by-default checkbox: **"After import, PERMANENTLY DELETE every other file in the folder"**. If you tick it and hit OK, you get a second, explicit confirmation dialog showing the exact count and a sample of up to 5 doomed paths. Only after clicking the red "Delete N file(s) permanently" button (default focus is Cancel) does the sweep actually run.
+
+## The rules
+
+- **Extension matching is case-insensitive.** `.mp4` also matches `.MP4`, `.Mp4`, etc.
+- **Recursive.** Sub-folders are walked too — deletion follows the same tree the picker enumerated over (with `followlinks=False`, so it can't chase a symlink out of the folder).
+- **Nuclear scope.** If you tick "delete other files", *everything* that isn't a ticked extension goes — that includes `.srt`, `.jpg`, `.docx`, camera-generated sidecar `.thm`s, everything. Not just other media formats.
+- **Permanent.** Files are removed with `os.remove()` — no Recycle Bin, no undo. This is intentional and the dialog says so in capital letters.
+- **Per-file failure isolation.** If one file is locked (open in Explorer, say), it's logged and skipped — the rest of the sweep still proceeds.
+- **Empty tick-set short-circuits.** If you untick every extension, the import is abandoned with no confirmation dialog and nothing is added or deleted.
+- **Cancel is always safe.** Cancelling either the picker or the confirmation dialog leaves every file on disk intact and imports nothing.
+
+## When the picker does NOT appear
+
+- Folder contains only one file extension across every file (any depth). The old behaviour applies — everything gets imported, nothing gets deleted.
+- Folder is empty or has no supported media formats. `Add from Folder` reports "no supported files found" as before.
+
+## Tests
+
+- 29 / 29 new V14.9.0 folder-picker probes pass (`_qa/v149_folder_multi_format.py`).
+- 426 / 426 main regression probes still pass (`_qa/regress_v12_3.py`).
+- All 9 test suites still green (no regression against the V14.6.0 recursive scanner or the V14.6.0 file-type filter).
+- EXE smoke launch on Windows: clean.
+
+## Downloads
+
+- **Windows:** ``Veloxa-Video-Editor-V14.9.0-Setup.exe`` (--onedir)
+- **macOS:** ``Veloxa-Video-Editor-V14.9.0-macOS.dmg`` (ad-hoc signed)
+
+Existing users will be offered V14.9.0 via Help → Check for Updates… (Mac → ``.dmg``, Windows → ``.exe``).
+
+---
+
 # Veloxa Video Editor — V14.8.1
 
 **Hot-fix.** Removed the duplicate **"Detected: NVIDIA, CPU + CPU"** label from the Output tab — the same info is already shown more accurately by the V14.4.1 status-bar GPU summary, and the Output-tab version had a stale rendering bug.

@@ -36,7 +36,7 @@ print(f"Generating test source at {src} ...")
 gen = subprocess.run([
     ffmpeg, "-y",
     # 60-second source so a 'medium'-preset transcode actually has
-    # something to chew on — long enough that progress should emit
+    # something to chew on -- long enough that progress should emit
     # ~30 times during the encode if it's flowing properly.
     "-f", "lavfi", "-i", "testsrc=duration=8:size=640x360:rate=30",
     "-f", "lavfi", "-i", "sine=frequency=440:duration=8",

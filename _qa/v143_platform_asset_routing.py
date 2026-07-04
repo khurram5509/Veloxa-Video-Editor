@@ -52,7 +52,7 @@ def restore_platform():
 
 print()
 print("=" * 72)
-print("V14.3.4 — platform-asset routing")
+print("V14.3.4 -- platform-asset routing")
 print("=" * 72)
 
 # Actual V14.3.3 release shape.
@@ -75,11 +75,11 @@ try:
           not picked["name"].lower().endswith(".dmg"))
     check("Win-picked asset contains 'setup'",
           "setup" in picked["name"].lower())
-    # Reversed asset order — still picks .exe.
+    # Reversed asset order -- still picks .exe.
     picked2 = _pc.pick_release_asset(list(reversed(v143)))
     check("Win picks .exe regardless of asset order",
           picked2["name"].lower().endswith(".exe"))
-    # Only DMG present (corrupt release) — Win returns None, NOT .dmg.
+    # Only DMG present (corrupt release) -- Win returns None, NOT .dmg.
     only_dmg = [asset("Veloxa-Video-Editor-V14.3.3-macOS.dmg")]
     picked3 = _pc.pick_release_asset(only_dmg)
     check("Win refuses to serve a .dmg as fallback (returns None)",
@@ -102,11 +102,11 @@ try:
           not picked["name"].lower().endswith(".exe"))
     check("Mac-picked asset contains 'macOS'",
           "macos" in picked["name"].lower())
-    # Reversed order — still picks .dmg.
+    # Reversed order -- still picks .dmg.
     picked2 = _pc.pick_release_asset(list(reversed(v143)))
     check("Mac picks .dmg regardless of asset order",
           picked2["name"].lower().endswith(".dmg"))
-    # Only EXE present (corrupt release) — Mac returns None, NOT .exe.
+    # Only EXE present (corrupt release) -- Mac returns None, NOT .exe.
     only_exe = [asset("Veloxa-Video-Editor-V14.3.3-Setup.exe")]
     picked3 = _pc.pick_release_asset(only_exe)
     check("Mac refuses to serve a .exe as fallback (returns None)",
@@ -117,13 +117,13 @@ finally:
 
 # ---- Adversarial: filenames designed to fool the picker -------------------
 print()
-print("[3] Adversarial filenames — should never mix platforms")
+print("[3] Adversarial filenames -- should never mix platforms")
 
 adversarial = [
     asset("Veloxa-macOS-Setup.exe"),     # Win pick OK (it's the exe, "macOS" in name)
     asset("Veloxa-windows-Setup.dmg"),   # Mac pick OK (it's the dmg, "windows" in name)
-    asset("README.dmg"),                 # noise — Mac may consider
-    asset("CHANGELOG.exe"),              # noise — Win may consider
+    asset("README.dmg"),                 # noise -- Mac may consider
+    asset("CHANGELOG.exe"),              # noise -- Win may consider
     asset("Veloxa-V14.3.3-Setup.exe"),   # the real one
     asset("Veloxa-V14.3.3-macOS.dmg"),   # the real one
 ]
@@ -203,7 +203,7 @@ check("launch_installer branches on IS_WIN/IS_MAC",
 # ---- Live (actual) GitHub release: do platform-specific lookups return
 # the right asset for the v14.3.3 release? Network-conditional.
 print()
-print("[6] Live GitHub release lookup (network) — best-effort")
+print("[6] Live GitHub release lookup (network) -- best-effort")
 import urllib.request, urllib.error, json
 try:
     req = urllib.request.Request(
@@ -250,8 +250,8 @@ print(f"Total: {len(PASS)+len(FAIL)}    Pass: {len(PASS)}    Fail: {len(FAIL)}")
 if FAIL:
     print()
     for n, d in FAIL:
-        print(f"  FAIL  {n}" + (f" — {d}" if d else ""))
+        print(f"  FAIL  {n}" + (f" -- {d}" if d else ""))
     sys.exit(1)
 print("All platform-asset-routing checks PASS.")
-print("Mac users → .dmg only. Windows users → .exe only. No mixing.")
+print("Mac users -> .dmg only. Windows users -> .exe only. No mixing.")
 sys.exit(0)

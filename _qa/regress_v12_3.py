@@ -5,7 +5,7 @@ Covers:
     intro/outro, profile field propagation).
   * Audit fixes applied this pass: BUG-1, BUG-2, BUG-3, EDGE-1, EDGE-2.
 
-This is a static / introspective test pass — it doesn't actually invoke
+This is a static / introspective test pass -- it doesn't actually invoke
 FFmpeg, but it verifies the code paths that BUILD the FFmpeg invocation
 behave correctly. The encode integration test is handled by the
 build-and-launch smoke step after this passes.
@@ -402,7 +402,7 @@ fc, last = build_filter(
 )
 check("src == target: scale step still emitted (V12.3.2 fix)",
       "scale=1920:1080" in fc and "setsar=1" in fc,
-      "filter is empty when src==target — the old bug")
+      "filter is empty when src==target -- the old bug")
 
 # Case C: 4K source, 1080p target -> standard downscale, aspect preserved.
 fc, last = build_filter(
@@ -447,7 +447,7 @@ check("_encode_audio_to_video adds -hwaccel before the visual input",
       '"-hwaccel", hwaccel' in _src_atv,
       "-hwaccel arg not appended")
 # Make sure the -hwaccel arg is BEFORE the visual input (otherwise it
-# has no effect — FFmpeg's -hwaccel is per-input and must precede -i).
+# has no effect -- FFmpeg's -hwaccel is per-input and must precede -i).
 hwaccel_pos = _src_atv.find('"-hwaccel", hwaccel')
 # After V12.3.5 the input arg is ``visual_input_path`` (possibly the
 # pre-scaled temp PNG rather than the user's raw ``self.visual_path``).
@@ -618,7 +618,7 @@ from app.updater import (
 )
 
 # Version is correctly bumped.
-check("APP_VERSION = '14.8.1'", _APP_VERSION == "14.8.1",
+check("APP_VERSION = '14.9.0'", _APP_VERSION == "14.9.0",
       f"got {_APP_VERSION!r}")
 check("GITHUB_REPO is khurram5509/Veloxa-Video-Editor",
       _u.GITHUB_REPO == "khurram5509/Veloxa-Video-Editor",
@@ -642,7 +642,7 @@ check("'v' prefix tolerated either side",
       _vc("v13.0", "V13.0") == 0)
 
 # is_newer convenience.
-check("is_newer('14.8.1', '13.0')", _newer("14.8.1", "13.0"))
+check("is_newer('14.9.0', '13.0')", _newer("14.9.0", "13.0"))
 check("not is_newer('12.9.99', '13.0')",
       not _newer("12.9.99", "13.0"))
 check("not is_newer('13.0', '13.0')",
@@ -700,10 +700,10 @@ check("main_window imports UpdateChecker + helpers",
       and "UpdateChecker" in mw_src and "DownloadWorker" in mw_src
       and "launch_installer_and_quit" in mw_src)
 check("Help menu has 'Check for Updates' item",
-      # V14.8.1: ellipsis switched from '...' to '…' (single codepoint)
+      # V14.8.1: ellipsis switched from '...' to a single U+2026 codepoint
       # when the items moved into the Help submenu. Accept either form.
       ('"Check for Updates..."' in mw_src
-       or '"Check for Updates…"' in mw_src)
+       or '"Check for Updates' + chr(0x2026) + '"' in mw_src)
       and "_check_for_updates_manual" in mw_src)
 check("Auto-check fires on startup (QTimer.singleShot)",
       "_maybe_check_for_updates_on_startup" in mw_src
@@ -728,14 +728,14 @@ check("docs.py advertises auto-update feature",
 
 # Installer.iss + build.ps1 carry the new version.
 iss_src = open(ROOT / "installer.iss", encoding="utf-8").read()
-check("installer.iss AppVersion = 14.8.1", '"14.8.1"' in iss_src)
-check("installer.iss EXE name = V14.8.1.exe",
-      "Veloxa-Video-Editor-V14.8.1.exe" in iss_src)
+check("installer.iss AppVersion = 14.9.0", '"14.9.0"' in iss_src)
+check("installer.iss EXE name = V14.9.0.exe",
+      "Veloxa-Video-Editor-V14.9.0.exe" in iss_src)
 check("installer.iss preserves stable AppId across V12 -> V13",
       "F2E1A8C4-1E5B-4C9A-9B27-VELOXA-VID-V121" in iss_src)
 ps1_src = open(ROOT / "build.ps1", encoding="utf-8").read()
-check("build.ps1 builds V14.8.1 EXE",
-      "Veloxa-Video-Editor-V14.8.1" in ps1_src)
+check("build.ps1 builds V14.9.0 EXE",
+      "Veloxa-Video-Editor-V14.9.0" in ps1_src)
 
 # V14.8.1 crash-fix: stale C++-object guard in _start_update_check.
 mw_src2 = open(ROOT / "app" / "main_window.py", encoding="utf-8").read()
@@ -772,7 +772,7 @@ check("DARK_QSS and LIGHT_QSS differ (not a copy/paste)",
 check("dark theme uses brand orange",  "#f58220" in DARK_QSS)
 check("light theme uses brand orange", "#f58220" in LIGHT_QSS)
 
-# V14.8.1: light theme redesign — depth + hierarchy.
+# V14.8.1: light theme redesign -- depth + hierarchy.
 check("light theme uses qlineargradient for button/input depth",
       "qlineargradient" in LIGHT_QSS)
 check("light theme uses tinted off-white main bg (cards stand out)",
@@ -1139,9 +1139,9 @@ check("Workflow uploads .dmg to the matching release",
 
 
 # ===========================================================================
-# V14.8.1 — Parallel CPU encoder slot + add-files-while-batch-runs
+# V14.8.1 -- Parallel CPU encoder slot + add-files-while-batch-runs
 # ===========================================================================
-section("V14.8.1 — CPU/GPU parallel slot + safety + queue-add")
+section("V14.8.1 -- CPU/GPU parallel slot + safety + queue-add")
 
 # ---- engine/system_resources.py contract --------------------------------
 from engine import system_resources as _sr
@@ -1241,9 +1241,9 @@ check("requirements.txt includes psutil>=5.9",
 
 
 # ===========================================================================
-# V14.8.1 — first-video-stuck-at-0% progress fix
+# V14.8.1 -- first-video-stuck-at-0% progress fix
 # ===========================================================================
-section("V14.8.1 — progress emission fix")
+section("V14.8.1 -- progress emission fix")
 
 # Re-read engine/batch.py for these checks.
 _batch_src_143 = (ROOT / "engine" / "batch.py").read_text(encoding="utf-8")
@@ -1285,9 +1285,9 @@ check("_run_ffmpeg decodes stderr bytes",
 
 
 # ===========================================================================
-# V14.8.1 — audio-template preview pane fix
+# V14.8.1 -- audio-template preview pane fix
 # ===========================================================================
-section("V14.8.1 — audio-template preview pane")
+section("V14.8.1 -- audio-template preview pane")
 
 # 1) The new generator exists at the engine level.
 from engine import (
@@ -1324,9 +1324,9 @@ check("generate_audio_template_preview uses -update 1 for last-frame win",
 
 
 # ===========================================================================
-# V14.8.1 — platform-asset routing must never mix .exe and .dmg
+# V14.8.1 -- platform-asset routing must never mix .exe and .dmg
 # ===========================================================================
-section("V14.8.1 — Win → .exe only / Mac → .dmg only (no mixing)")
+section("V14.8.1 -- Win -> .exe only / Mac -> .dmg only (no mixing)")
 
 # Monkey-patch IS_WIN / IS_MAC to verify both branches lock in correctly.
 import app.platform_compat as _pc_routing
@@ -1388,9 +1388,9 @@ check("check_for_updates log message is platform-agnostic",
 
 
 # ===========================================================================
-# V14.8.1 — auto-assign audio visuals at add-to-queue time
+# V14.8.1 -- auto-assign audio visuals at add-to-queue time
 # ===========================================================================
-section("V14.8.1 — auto-assign audio visuals on add")
+section("V14.8.1 -- auto-assign audio visuals on add")
 
 # Source-level checks (running the full MainWindow blocks on single-
 # instance + startup update poll, so we don't instantiate it in the
@@ -1440,9 +1440,9 @@ check("_build_jobs has 'already_has_visual' guard",
 
 
 # ===========================================================================
-# V14.8.1 — light-theme queue-row text was invisible (white-on-white)
+# V14.8.1 -- light-theme queue-row text was invisible (white-on-white)
 # ===========================================================================
-section("V14.8.1 — light theme: queue-row labels must be readable")
+section("V14.8.1 -- light theme: queue-row labels must be readable")
 
 # 1) Both QSS files now carry an explicit QLabel[role="queue-row-label"]
 #    rule with theme-appropriate colours.
@@ -1467,14 +1467,14 @@ check("DARK_QSS has a selected=\"true\" variant",
       '[selected="true"]' in _dark_block)
 
 # 2) main_window._apply_row_selection_styles no longer hard-codes
-#    the inline color — it must drive the QSS rule via the dynamic
+#    the inline color -- it must drive the QSS rule via the dynamic
 #    'selected' property only.
 _mw_src_146 = (ROOT / "app" / "main_window.py").read_text(encoding="utf-8")
 _apply_sel = _mw_src_146.split(
     "def _apply_row_selection_styles")[1].split("def ")[0]
 check("_apply_row_selection_styles uses setProperty('selected', ...)",
       'setProperty("selected"' in _apply_sel)
-# The inline 'color: #ffffff' / 'color: #e6e6e6' must be gone — those
+# The inline 'color: #ffffff' / 'color: #e6e6e6' must be gone -- those
 # hard-coded the dark-theme values regardless of the active theme.
 check("_apply_row_selection_styles no longer hard-codes inline colors",
       "color: #ffffff" not in _apply_sel
@@ -1484,10 +1484,10 @@ check("_apply_row_selection_styles re-polishes after property change",
 
 
 # ===========================================================================
-# V14.8.1 — build mode: --onedir (was --onefile, caused python314.dll
+# V14.8.1 -- build mode: --onedir (was --onefile, caused python314.dll
 # LoadLibrary failures after Windows in-app updates)
 # ===========================================================================
-section("V14.8.1 — Windows build uses --onedir (no _MEI extract race)")
+section("V14.8.1 -- Windows build uses --onedir (no _MEI extract race)")
 
 _build_ps1 = (ROOT / "build.ps1").read_text(encoding="utf-8")
 # Drop comment lines (start with # after any whitespace) before checking.
@@ -1513,9 +1513,9 @@ check("installer.iss still renames to unversioned EXE name",
 
 
 # ===========================================================================
-# V14.8.1 — settings tabs wrap in QScrollArea (macOS row-overlap fix)
+# V14.8.1 -- settings tabs wrap in QScrollArea (macOS row-overlap fix)
 # ===========================================================================
-section("V14.8.1 — settings tabs scroll instead of overlapping on macOS")
+section("V14.8.1 -- settings tabs scroll instead of overlapping on macOS")
 
 _mw_src_148 = (ROOT / "app" / "main_window.py").read_text(encoding="utf-8")
 check("QScrollArea imported in app/main_window.py",
@@ -1523,7 +1523,7 @@ check("QScrollArea imported in app/main_window.py",
       .split(")")[0])
 check("MainWindow defines _wrap_in_scroll helper",
       "def _wrap_in_scroll" in _mw_src_148)
-# All 4 settings tabs should be wrapped — Trim, Watermark, Audio
+# All 4 settings tabs should be wrapped -- Trim, Watermark, Audio
 # Visuals, Output. The Watermark tab was the user-visible overlap on
 # macOS but the same QGroupBox stack lives in the other tabs.
 _settings_block = _mw_src_148.split(
@@ -1547,9 +1547,9 @@ check("QSS has QScrollBar:vertical styling (light + dark = 2 rules)",
 
 
 # ===========================================================================
-# V14.8.1 — audio row label respects active audio template
+# V14.8.1 -- audio row label respects active audio template
 # ===========================================================================
-section("V14.8.1 — audio row label: template-active stops showing "
+section("V14.8.1 -- audio row label: template-active stops showing "
         "'(visual needed)'")
 
 _mw_src_149 = (ROOT / "app" / "main_window.py").read_text(encoding="utf-8")
@@ -1586,14 +1586,14 @@ check("Auto-assign logs the 'list has 0 usable entries' no-op reason",
 
 
 # ===========================================================================
-# V14.8.1 — macOS menubar fix: every top-level entry is a real menu
+# V14.8.1 -- macOS menubar fix: every top-level entry is a real menu
 # ===========================================================================
-section("V14.8.1 — macOS menubar: Tools / Help / Appearance")
+section("V14.8.1 -- macOS menubar: Tools / Help / Appearance")
 
 # macOS native QMenuBar silently DROPS top-level QActions added via
 # ``mb.addAction(...)``. Only proper submenus (``mb.addMenu(...)``) show
 # up. In V14.8.1 and earlier this left macOS users with ONLY the
-# Appearance menu visible — no way to reach Check for Updates, the
+# Appearance menu visible -- no way to reach Check for Updates, the
 # logs, the watch folder, or any of the docs.
 _mb_src = _mw_src_149.split("def _build_menu_bar")[1].split("\n    def ")[0]
 
@@ -1605,7 +1605,7 @@ check("Appearance menu added via mb.addMenu",
       'mb.addMenu("Appearance")' in _mb_src)
 # Critical: no flat top-level action items left. Each menu calls
 # .addAction on its inner menu (tools.addAction / help_menu.addAction /
-# appearance.addAction) — never on the menubar directly. Strip comments
+# appearance.addAction) -- never on the menubar directly. Strip comments
 # first because the docstring mentions the historical mb.addAction call.
 _mb_code = "\n".join(
     ln for ln in _mb_src.splitlines() if not ln.lstrip().startswith("#"))
@@ -1636,19 +1636,19 @@ for label in ("Watch Folder", "Manage Saved Data", "Open Log Folder"):
           label in _mb_src and "tools.addAction" in _mb_src)
 
 # Every menu item now sets NoRole so Qt's TextHeuristicRole can't
-# auto-move them on macOS. Count the actual .setMenuRole( calls — at
+# auto-move them on macOS. Count the actual .setMenuRole( calls -- at
 # least 4 (tools loop / help loop / check_updates / appearance loop).
 check("All menu items use MenuRole.NoRole (no auto-move on macOS)",
       _mb_code.count("setMenuRole(QAction.MenuRole.NoRole)") >= 4)
 
 
 # ===========================================================================
-# V14.8.1 — GPU detection is per-machine, cache key includes machine ID,
+# V14.8.1 -- GPU detection is per-machine, cache key includes machine ID,
 #           Tools menu can force a re-detect, status bar shows the GPU
 # ===========================================================================
-section("V14.8.1 — GPU is auto-detected per physical PC, never baked")
+section("V14.8.1 -- GPU is auto-detected per physical PC, never baked")
 
-# 1) Cache key now includes a machine ID — a synced %APPDATA% / OneDrive
+# 1) Cache key now includes a machine ID -- a synced %APPDATA% / OneDrive
 #    cache file can't apply on a different PC.
 _enc_src = (ROOT / "engine" / "encoders.py").read_text(encoding="utf-8")
 check("encoders schema is at least 3 (machine-keyed cache, V14.4.1+)",
@@ -1666,9 +1666,9 @@ check("detect_available_encoders accepts force_rescan kwarg",
       "def detect_available_encoders(ffmpeg: str, force_rescan: bool"
       in _enc_src)
 
-# 2) Tools menu includes "Re-detect GPU encoders…"
+# 2) Tools menu includes "Re-detect GPU encoders..."
 _mw_src_141 = (ROOT / "app" / "main_window.py").read_text(encoding="utf-8")
-check("Tools menu has 'Re-detect GPU encoders…'",
+check("Tools menu has 'Re-detect GPU encoders...'",
       "Re-detect GPU encoders" in _mw_src_141
       and "_redetect_gpu_encoders" in _mw_src_141)
 # Helpers defined:
@@ -1699,9 +1699,9 @@ check("detect_available_encoders('') returns the CPU fallback",
 
 
 # ===========================================================================
-# V14.8.1 — resume interrupted batches + opt-in crash reporter
+# V14.8.1 -- resume interrupted batches + opt-in crash reporter
 # ===========================================================================
-section("V14.8.1 — resume + crash reporter")
+section("V14.8.1 -- resume + crash reporter")
 
 # ---- crash reporter module --------------------------------------------
 from app import crash_reporter as _cr
@@ -1780,9 +1780,9 @@ check("QueueItemData.from_dict still resets encoding -> pending",
 
 
 # ===========================================================================
-# V14.8.1 — Add from Folder (recursive scan picks every supported file)
+# V14.8.1 -- Add from Folder (recursive scan picks every supported file)
 # ===========================================================================
-section("V14.8.1 — Add from Folder")
+section("V14.8.1 -- Add from Folder")
 
 _mw_src_160 = (ROOT / "app" / "main_window.py").read_text(encoding="utf-8")
 check("MainWindow defines _on_add_folder_clicked",
@@ -1820,9 +1820,9 @@ check("Recursive scan descends into subfolders",
 
 
 # ===========================================================================
-# V14.8.1 — AV1 encoder support (libsvtav1 + av1_nvenc / av1_qsv / av1_amf)
+# V14.8.1 -- AV1 encoder support (libsvtav1 + av1_nvenc / av1_qsv / av1_amf)
 # ===========================================================================
-section("V14.8.1 — AV1 encoder catalog + CLI args")
+section("V14.8.1 -- AV1 encoder catalog + CLI args")
 
 # ---- engine.encoders catalog --------------------------------------------
 from engine import (
@@ -1840,7 +1840,7 @@ check("ENCODER_FOR_CODEC has an AV1 entry with the 4 expected encoders",
       sorted(ENCODER_FOR_CODEC[CODEC_AV1])
       == sorted(["libsvtav1", "av1_nvenc", "av1_qsv", "av1_amf"]))
 
-# Labels — used by the encoder dropdown to render human-friendly text.
+# Labels -- used by the encoder dropdown to render human-friendly text.
 for enc, label_must_contain in [
     ("libsvtav1", "SVT-AV1"),
     ("av1_nvenc", "NVENC"),
@@ -1850,7 +1850,7 @@ for enc, label_must_contain in [
     check(f"ENCODER_LABELS[{enc!r}] contains {label_must_contain!r}",
           label_must_contain in ENCODER_LABELS.get(enc, ""))
 
-# ---- encoder_codec_args — CRF mode for each AV1 encoder -----------------
+# ---- encoder_codec_args -- CRF mode for each AV1 encoder -----------------
 for enc, expected_codec, expected_quality_flag in [
     ("libsvtav1", "libsvtav1", "-crf"),
     ("av1_nvenc", "av1_nvenc", "-qp"),
@@ -1863,7 +1863,7 @@ for enc, expected_codec, expected_quality_flag in [
     check(f"encoder_codec_args({enc!r}, 'Balanced') uses CRF/QP mode",
           expected_quality_flag in args)
 
-# ---- encoder_codec_args — bitrate mode for each AV1 encoder ------------
+# ---- encoder_codec_args -- bitrate mode for each AV1 encoder ------------
 for enc in ("libsvtav1", "av1_nvenc", "av1_qsv", "av1_amf"):
     args = encoder_codec_args(enc, "Fast", video_bitrate_kbps=4000)
     check(f"encoder_codec_args({enc!r}, bitrate=4000) emits -b:v 4000k",

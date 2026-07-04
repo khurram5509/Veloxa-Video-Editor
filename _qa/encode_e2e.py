@@ -36,7 +36,7 @@ sys.path.insert(0, str(ROOT))
 
 # Import outside Qt because JobRunner has Qt deps. Easier path: import
 # the lower-level helpers directly via the engine's batch module
-# (which imports Qt, but that's fine — we just won't start an event
+# (which imports Qt, but that's fine -- we just won't start an event
 # loop).
 from engine import (
     JobRunner, find_ffmpeg,
@@ -179,7 +179,7 @@ def encode_one(*, src: Path, dst: Path, kind: str, opts: dict,
                visual_path: Path = None, visual_kind: str = None,
                visual_duration: float = 0.0):
     """Run a single JobRunner synchronously. Returns (ok, msg)."""
-    # JobRunner is a QThread — we just call its run() body directly.
+    # JobRunner is a QThread -- we just call its run() body directly.
     # The signals it emits during encode are ignored.
     runner = JobRunner(
         idx=0, src=str(src), dst=str(dst), kind=kind,

@@ -51,7 +51,7 @@ class StubMW:
                           QSettings.Scope.UserScope, str(tmpdir))
         self.settings = QSettings("Veloxa-VD-Test", "V10-AutoAssign")
 
-        # No ffprobe in this harness — durations resolve to 0.0.
+        # No ffprobe in this harness -- durations resolve to 0.0.
         self.ffprobe = None
 
     # The method needs these helpers. Re-bind from MainWindow.
@@ -99,13 +99,13 @@ def set_template(key: str):
 
 print()
 print("=" * 72)
-print("V14.3.5 — Auto-assign audio visuals on add")
+print("V14.3.5 -- Auto-assign audio visuals on add")
 print("=" * 72)
 
 
-# ---- 1. Template active → no-op ------------------------------------------
+# ---- 1. Template active -> no-op ------------------------------------------
 print()
-print("[1] Audio template active → auto-assign is a no-op")
+print("[1] Audio template active -> auto-assign is a no-op")
 set_template("spectrum_bars")
 mw.profile_visuals_enabled.setChecked(True)
 reset_pv_list([{"path": str(visual1), "kind": "image"},
@@ -116,9 +116,9 @@ check("Template set: returns empty dict",
       out == {})
 
 
-# ---- 2. Checkbox OFF → no-op ---------------------------------------------
+# ---- 2. Checkbox OFF -> no-op ---------------------------------------------
 print()
-print("[2] Rotation checkbox OFF → auto-assign is a no-op")
+print("[2] Rotation checkbox OFF -> auto-assign is a no-op")
 set_template("none")
 mw.profile_visuals_enabled.setChecked(False)
 reset_pv_list([{"path": str(visual1), "kind": "image"}])
@@ -128,9 +128,9 @@ check("Checkbox OFF: returns empty dict",
       out == {})
 
 
-# ---- 3. Empty list → no-op -----------------------------------------------
+# ---- 3. Empty list -> no-op -----------------------------------------------
 print()
-print("[3] Empty Profile Visuals list → auto-assign is a no-op")
+print("[3] Empty Profile Visuals list -> auto-assign is a no-op")
 set_template("none")
 mw.profile_visuals_enabled.setChecked(True)
 reset_pv_list([])
@@ -140,9 +140,9 @@ check("Empty list: returns empty dict",
       out == {})
 
 
-# ---- 4. No audio paths → no-op -------------------------------------------
+# ---- 4. No audio paths -> no-op -------------------------------------------
 print()
-print("[4] No audio paths → auto-assign is a no-op")
+print("[4] No audio paths -> auto-assign is a no-op")
 mw.profile_visuals_enabled.setChecked(True)
 reset_pv_list([{"path": str(visual1), "kind": "image"}])
 out = mw._auto_assign_audio_visuals_for_new([], "TestProfile4")
@@ -257,7 +257,7 @@ print(f"Total: {len(PASS)+len(FAIL)}    Pass: {len(PASS)}    Fail: {len(FAIL)}")
 if FAIL:
     print()
     for n, d in FAIL:
-        print(f"  FAIL  {n}" + (f" — {d}" if d else ""))
+        print(f"  FAIL  {n}" + (f" -- {d}" if d else ""))
     sys.exit(1)
 print("All auto-assign-visuals checks PASS.")
 sys.exit(0)
