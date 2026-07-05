@@ -1,10 +1,22 @@
-"""HTML content for the README / Install / Help / License menu dialogs."""
+"""HTML content for the README / Install / Help / License menu dialogs.
+
+The version literal shown in the dialog titles + CLI examples is sourced
+from ``app.updater.APP_VERSION`` so the docs never drift from the running
+build. Historic version tags on individual bullet points (``(V12.3.1)``,
+``(V14.6.0)``, ...) are the ship-version of that feature, not the current
+version — those stay literal so the reader knows when each shipped.
+"""
 from __future__ import annotations
 
+from .updater import APP_VERSION
 
-README_HTML = """
-<h1 style="color:#f58220; margin-bottom:4px;">Veloxa Video Editor V13.0</h1>
-<p style="color:#aaa; margin-top:0;">Bulk video editor for Windows. Part of the VeloxaLAB toolkit.</p>
+# Convenience alias used across the HTML blocks below.
+_V = f"V{APP_VERSION}"
+
+
+README_HTML = f"""
+<h1 style="color:#f58220; margin-bottom:4px;">Veloxa Video Editor {_V}</h1>
+<p style="color:#aaa; margin-top:0;">Bulk video editor for Windows &amp; macOS. Part of the VeloxaLAB toolkit.</p>
 
 <h2>What it does</h2>
 <p>Trim, watermark, and convert videos and audio files to MP4. Designed for
@@ -14,7 +26,18 @@ the queue survives app restarts and crashes.</p>
 
 <h2>Features at a glance</h2>
 <ul>
-  <li><b>Auto-update via GitHub (V13.0)</b> — checks the configured GitHub repo's Releases on startup (opt-in, ON by default), surfaces new versions with release notes, and runs the in-place installer with one click. Manual <i>Check for Updates...</i> menu item always works regardless of the setting.</li>
+  <li><b>Add from Folder multi-format picker (V14.9.0)</b> — when the recursive scan finds more than one file extension in the chosen folder, a picker dialog lists each unique extension (checkbox per extension, all ticked by default). Only ticked extensions get imported. Optional second checkbox permanently deletes every non-chosen file in the folder tree — with an explicit second confirmation dialog showing the exact count + sample paths before anything is removed.</li>
+  <li><b>Updater stall detection + Download in Browser (V14.8.0)</b> — the in-app installer download now has a 15 s per-read timeout and a 30 s zero-bytes inactivity detector, so it fails fast with a clear dialog instead of hanging forever behind an aggressive AV or CDN. The update-available dialog gained a fourth <i>Download in Browser</i> button that skips the in-app downloader entirely.</li>
+  <li><b>Custom FFmpeg flags + first-launch tour (V14.8.0)</b> — an <b>Extra FFmpeg flags</b> field in the Output tab appends any ``shlex``-parsed arguments to every encode command. A three-step onboarding tour fires ~2 s after first launch (gated by <code>QSettings.onboarding_seen_v1</code>, replayable via Help menu).</li>
+  <li><b>AV1 codec support (V14.7.0)</b> — four AV1 encoders auto-detected at runtime: <code>libsvtav1</code> (CPU), <code>av1_nvenc</code> (NVIDIA RTX 4000+), <code>av1_qsv</code> (Intel Arc / newer iGPUs), and <code>av1_amf</code> (AMD RDNA 3+). Priority-picker degrades gracefully when none is available.</li>
+  <li><b>Add from Folder (V14.6.0)</b> — pick a folder and every supported media file inside (recursive) lands in the queue. Skips symlinks, respects the supported-extensions list.</li>
+  <li><b>Batch resume + opt-in crash reporter (V14.5.0)</b> — an interrupted batch offers to resume from the exact row where it stopped on next launch. Opt-in crash reporter builds a pre-filled GitHub issue URL after an unhandled exception.</li>
+  <li><b>CPU + GPU parallel encoder slot (V14.3.0)</b> — the BatchManager can now open a second slot that force-CPUs (libx264/libx265/libsvtav1) while the GPU slot keeps running its NVENC/QSV/AMF pipeline. Guarded by a per-machine thread cap, process-priority nudge, and a RAM watchdog that vetoes a second slot when memory is tight.</li>
+  <li><b>macOS support (V14.2.0)</b> — full source-level parity: platform-aware paths, FFmpeg locator, DMG installer, GitHub Actions workflow that ad-hoc-signs the .app on every tag push.</li>
+  <li><b>Single-instance + HiDPI (V14.1.0)</b> — a second double-click on the EXE hands off to the running instance instead of spawning a duplicate. HiDPI-aware layout, minimum window size guard.</li>
+  <li><b>Queue tree widget + live preview + audio visual templates (V14.0.0)</b> — the queue is a multi-column QTreeWidget (name / codec / resolution / status / progress) with right-click actions. The preview pane runs a real <code>QMediaPlayer</code>+<code>QVideoWidget</code> for play/pause/scrub, with a Source→Output info overlay. Audio inputs can be encoded against one of 6 real-time FFmpeg audio-visual templates (spectrum bars, circular spectrum, waveform, neon ring, podcast layout, Spotify canvas).</li>
+  <li><b>System / Light / Dark theme picker (V13.1.0)</b> — pick from the menu bar, choice persists across launches. <i>System</i> follows the current OS setting; Light and Dark are hand-designed with matching brand accent, focus rings, and disabled-state visibility.</li>
+  <li><b>Auto-update via GitHub (V13.0)</b> — checks the configured GitHub repo's Releases on startup (opt-in, ON by default), surfaces new versions with release notes, and runs the in-place installer with one click. Manual <i>Check for Updates...</i> menu item always works regardless of the setting. macOS installs get the .dmg; Windows installs get the .exe — never mixed.</li>
   <li><b>Quality tier dropdowns (V12.3.1)</b> — Video Quality and Audio Quality each pick from Low / Medium / High / Best / Super Best. The dropdown resolves to a kbps target sized to the output resolution (same tier scales appropriately at 720p vs 4K). Default is <b>Best</b>.</li>
   <li><b>Image-visual pre-scale (V12.3.5)</b> — for audio + image-visual encodes, the image is scaled to target dimensions once before the encode instead of every frame. Eliminates a per-frame CPU filter bottleneck so NVENC / QSV / AMF can run at much higher utilisation.</li>
   <li><b>Bulk processing engine</b> — sequential or parallel (1-2 concurrent jobs), with one auto-retry on transient failures.</li>
@@ -34,7 +57,7 @@ the queue survives app restarts and crashes.</p>
   <li><b>Saved profile assets (V11.1)</b> — image and video watermarks referenced by a profile are copied into the app on Save, so the profile keeps working even if the originals get moved or deleted. Use <i>File &rarr; Manage Saved Data...</i> to inspect or wipe.</li>
   <li><b>Split on length (V11)</b> — cap each output at N minutes; oversized inputs auto-split into Part1, Part2, ...</li>
   <li><b>Watch folder mode</b> — point the app at a folder; new files land &rarr; auto-encode &rarr; move source to <code>done/</code>. True fire-and-forget.</li>
-  <li><b>Output filename pattern</b> — flexible placeholders (<code>{name}</code>, <code>{date}</code>, <code>{codec}</code>, <code>{n:03d}</code> ...) instead of a fixed suffix.</li>
+  <li><b>Output filename pattern</b> — flexible placeholders (<code>{{name}}</code>, <code>{{date}}</code>, <code>{{codec}}</code>, <code>{{n:03d}}</code> ...) instead of a fixed suffix.</li>
   <li><b>Total batch ETA</b> — estimated remaining time + projected finish clock-time, updates as jobs complete.</li>
   <li><b>Hardware decode</b> — main video decoded on the same GPU that encodes (CUDA / QSV / D3D11VA), ~2&times; throughput on 4K source.</li>
   <li><b>Audio fade-in / fade-out</b> — independently configurable, applied after speed change.</li>
@@ -66,30 +89,33 @@ when double-clicked and the CLI when launched with <code>--cli</code>.</p>
 """
 
 
-INSTALL_HTML = """
+INSTALL_HTML = f"""
 <h1 style="color:#f58220;">Installation Guide</h1>
 
-<h2>Quick start</h2>
-<p>This app is a self-contained portable executable &mdash; no installation needed.</p>
-<ol>
-  <li>Copy <code>Veloxa-Video-Editor-V13.0.exe</code> to any folder (Desktop, Documents, USB drive...).</li>
-  <li>Double-click to launch.</li>
-</ol>
-<p>The first launch may take a few seconds while Windows extracts the bundled FFmpeg binaries.
-Subsequent launches are faster.</p>
+<h2>Quick start — Windows</h2>
+<p>Run <code>Veloxa-Video-Editor-{_V}-Setup.exe</code>. The installer places the app under
+<code>C:\\Program Files\\Veloxa Video Editor\\</code>, creates Start Menu + Desktop shortcuts,
+and registers an uninstaller. Since V14.8.1 the installer uses PyInstaller's
+<code>--onedir</code> bundle layout, so launches are instant (no
+<code>%TEMP%\\_MEI</code> extract-and-scan race with Windows Defender).</p>
 
-<h2>Optional convenience</h2>
+<h2>Quick start — macOS</h2>
+<p>Open <code>Veloxa-Video-Editor-{_V}-macOS.dmg</code> and drag <b>Veloxa Video Editor.app</b>
+into <code>/Applications</code>. The .app is ad-hoc signed by GitHub Actions on every tag push.
+On first launch macOS will show a Gatekeeper prompt — right-click the app &rarr; Open &rarr; Open
+to authorize once, and it launches normally after that.</p>
+
+<h2>Optional convenience (Windows)</h2>
 <ul>
-  <li><b>Desktop shortcut:</b> right-click the EXE &rarr; Create shortcut &rarr; drag to Desktop.</li>
-  <li><b>Pin to Start / Taskbar:</b> right-click the EXE &rarr; Pin.</li>
+  <li>The installer already creates a Desktop shortcut (tick the box on the final page).</li>
+  <li><b>Pin to Start / Taskbar:</b> right-click the Start Menu entry &rarr; Pin.</li>
 </ul>
 
 <h2>System requirements</h2>
 <ul>
-  <li>Windows 10 or 11 (64-bit).</li>
-  <li>~500 MB free disk space (the EXE is ~390 MB).</li>
-  <li>For GPU acceleration: NVIDIA GTX 600+ / RTX, Intel iGPU (Skylake+), or AMD GPU.
-      Auto-detected on first launch and cached.</li>
+  <li>Windows 10/11 (64-bit) <b>or</b> macOS 12+ (Intel / Apple Silicon).</li>
+  <li>~700 MB free disk space (the installer is ~270 MB on Windows / ~90 MB on macOS; installed footprint is larger because of the --onedir bundle layout on Windows).</li>
+  <li>For GPU acceleration: NVIDIA GTX 600+ / RTX, Intel iGPU (Skylake+), or AMD GPU. Auto-detected on first launch and cached per-machine (the cache key includes a machine ID so it doesn't leak between installs).</li>
 </ul>
 
 <h2>Where state is stored</h2>
@@ -101,12 +127,17 @@ Subsequent launches are faster.</p>
 </ul>
 
 <h2>Uninstall</h2>
-<p>Delete the EXE. To remove all settings, also delete the registry path above and
-the <code>%APPDATA%\\Veloxa-VD</code> folder.</p>
+<p><b>Windows:</b> Settings &rarr; Apps &rarr; Veloxa Video Editor &rarr; Uninstall (or use
+the Start Menu <i>Uninstall Veloxa Video Editor</i> entry the installer creates). To also
+wipe your saved profiles + queue state, delete the registry path above and the
+<code>%APPDATA%\\Veloxa-VD</code> folder afterward.</p>
+<p><b>macOS:</b> drag <b>Veloxa Video Editor.app</b> from Applications to the Trash.
+Saved settings live under <code>~/Library/Preferences/com.veloxa.videoeditor.plist</code>
+and per-profile assets under <code>~/Library/Application Support/Veloxa-VD/</code>.</p>
 """
 
 
-HELP_HTML = """
+HELP_HTML = f"""
 <h1 style="color:#f58220;">Help</h1>
 
 <h2>Adding files to the queue</h2>
@@ -174,16 +205,16 @@ top of an image watermark, with text on top of both.</p>
   <li><b>Force stereo audio:</b> on by default; upmixes mono.</li>
   <li><b>Normalize audio loudness:</b> EBU R128 single-pass to -16 LUFS / -1.5 dBTP / LRA 11. Streaming &amp; podcast standard.</li>
   <li><b>Speed:</b> 0.1x &ndash; 10x. Pitch-preserving for audio (chained <code>atempo</code>); frame-accurate for video (<code>setpts</code>).</li>
-  <li><b>Filename pattern:</b> placeholders like <code>{name}</code>, <code>{date}</code>, <code>{codec}</code>, <code>{n:03d}</code>. Default <code>{name}_edited</code>.</li>
+  <li><b>Filename pattern:</b> placeholders like <code>{{name}}</code>, <code>{{date}}</code>, <code>{{codec}}</code>, <code>{{n:03d}}</code>. Default <code>{{name}}_edited</code>.</li>
 </ul>
 
 <h2>Headless CLI mode</h2>
 <p>Run the executable from cmd / PowerShell with <code>--cli</code> to drive the
 engine without the GUI &mdash; ideal for Task Scheduler, build pipelines, or remote use.</p>
-<pre>Veloxa-Video-Editor-V13.0.exe --cli --list-profiles
-Veloxa-Video-Editor-V13.0.exe --cli --profile youtube --input "C:/videos/foo.mp4"
-Veloxa-Video-Editor-V13.0.exe --cli --profile yt --input "C:/videos/" --output-dir "C:/encoded/" --parallel 2
-Veloxa-Video-Editor-V13.0.exe --cli --input music.mp3 --visual cover.jpg</pre>
+<pre>Veloxa-Video-Editor-{_V}.exe --cli --list-profiles
+Veloxa-Video-Editor-{_V}.exe --cli --profile youtube --input "C:/videos/foo.mp4"
+Veloxa-Video-Editor-{_V}.exe --cli --profile yt --input "C:/videos/" --output-dir "C:/encoded/" --parallel 2
+Veloxa-Video-Editor-{_V}.exe --cli --input music.mp3 --visual cover.jpg</pre>
 <p>Supports a folder as <code>--input</code> (recursive scan), <code>--output-dir</code>,
 <code>--parallel</code>, <code>--visual</code> for audio jobs, and <code>--no-overwrite</code>.
 Use <code>--show-config</code> to dump the resolved engine options as JSON, or
@@ -195,27 +226,51 @@ automatically retries it <b>once</b>. Common transient failures (file briefly
 locked, GPU driver glitch, disk hiccup) recover on the second attempt without
 manual intervention &mdash; useful for long unattended runs.</p>
 
-<h2>Auto-update (V13.0)</h2>
+<h2>Auto-update (V13.0, hardened in V14.0.1 &amp; V14.8.0)</h2>
 <p>On launch, Veloxa polls the configured GitHub Releases endpoint for a
 newer version. The check is <b>opt-in and ON by default</b>; you can disable it
 from the "Update available" dialog (look for the
 <i>Check for updates on startup</i> tickbox). The check is silent if no update
-is found, fails silently if the API is unreachable, and never blocks the UI.</p>
+is found, fails silently if the API is unreachable, and never blocks the UI.
+Windows installs are offered the <code>.exe</code>; macOS installs are offered
+the <code>.dmg</code> &mdash; never mixed.</p>
 <p>When a newer version is found, a dialog shows:</p>
 <ul>
   <li><b>Current</b> and <b>available</b> version, with release-notes preview.</li>
-  <li><b>Download &amp; Install</b> &mdash; downloads the Windows installer
-      with a progress bar, then quits Veloxa and launches the installer.
+  <li><b>Download &amp; Install</b> &mdash; the download runs on a background
+      QThread (V14.0.1) with a 15 s per-read socket timeout and a 30 s
+      zero-bytes inactivity detector (V14.8.0), so a stalled connection
+      surfaces a clear error dialog within 30 s instead of hanging forever.
+      When the transfer finishes Veloxa quits and launches the installer.
       The installer keeps the same <code>AppId</code> as previous versions,
       so settings, profiles, and queue state survive the upgrade.</li>
+  <li><b>Download in Browser (V14.8.0)</b> &mdash; skips the in-app downloader
+      entirely and opens the installer link so your browser handles the
+      transfer with its own resume/retry behaviour. Recommended fallback if
+      an aggressive AV or corporate proxy keeps stalling the in-app download.</li>
   <li><b>Remind Me Later</b> &mdash; re-prompted next launch.</li>
   <li><b>Skip This Version</b> &mdash; no auto-prompt for this exact
       version; future versions still prompt. The <i>Check for Updates...</i>
       menu item still works on demand.</li>
 </ul>
-<p>Auto-update is disabled in this build until the GitHub repo slug is set
-in <code>app/updater.py::GITHUB_REPO</code>. If it's empty, the manual menu
-item shows a help message instead of failing silently.</p>
+<p>The manual "You're up to date" dialog (V14.8.0) now shows the current
+version + a clickable Release Page link, handy when you want to reinstall
+the same version or look at previous release notes.</p>
+
+<h2>Add from Folder (V14.6.0, multi-format picker V14.9.0)</h2>
+<p>Click <b>Add from Folder</b> in the Queue area and pick a folder — every supported
+media file inside gets added to the queue (recursive, symlinks skipped).</p>
+<p>Since V14.9.0, if the folder holds more than one file extension a picker dialog
+lists each unique extension found with a checkbox (all ticked by default). Only ticked
+extensions get imported. Case-insensitive matching (<code>.mp4</code> also matches <code>.MP4</code>).</p>
+<p>Underneath is a second, <b>unticked</b>-by-default checkbox: <i>"After import, PERMANENTLY
+DELETE every other file in the folder."</i> Tick it and hit OK to get an explicit second
+confirmation dialog with the exact count + a sample of up to 5 doomed paths + a red
+<i>Delete N file(s) permanently</i> button (default focus is Cancel). Only after clicking
+the red button does the sweep run. Deletion is permanent (<code>os.remove()</code>, not
+Recycle Bin) and nuclear-scope: everything that isn't a ticked extension goes, including
+<code>.srt</code>, <code>.jpg</code>, <code>.docx</code>, camera <code>.thm</code> sidecars.
+Per-file failures are isolated so one locked file doesn't kill the sweep.</p>
 
 <h2>Profiles</h2>
 <p>A profile is a snapshot of every setting in the Trim, Watermark, and

@@ -720,11 +720,14 @@ check("Update flow warns when a batch is running",
 
 # Docs cover the new feature.
 docs_src = open(ROOT / "app" / "docs.py", encoding="utf-8").read()
-check("docs.py title bumped to V13.0",
-      "Veloxa Video Editor V13.0" in docs_src)
+check("docs.py title uses dynamic APP_VERSION",
+      # V14.9.0: switched to f-string interpolation from APP_VERSION so
+      # the docs never drift again. Old assertion was a hardcoded literal.
+      "Veloxa Video Editor {_V}" in docs_src
+      or "from .updater import APP_VERSION" in docs_src)
 check("docs.py advertises auto-update feature",
       "Auto-update via GitHub" in docs_src
-      or "Auto-update (V13.0)" in docs_src)
+      or "Auto-update (V13.0" in docs_src)
 
 # Installer.iss + build.ps1 carry the new version.
 iss_src = open(ROOT / "installer.iss", encoding="utf-8").read()

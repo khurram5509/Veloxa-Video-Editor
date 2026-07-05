@@ -1,4 +1,8 @@
-"""Main application window. Composes engine + UI for the Veloxa Video Editor V12.3 app."""
+"""Main application window. Composes engine + UI for the Veloxa Video Editor app.
+
+The window title / About dialog / update-check strings all interpolate
+``app.updater.APP_VERSION`` so the running version is never hardcoded here.
+"""
 from __future__ import annotations
 
 import json
