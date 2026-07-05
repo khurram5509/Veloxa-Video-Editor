@@ -1,3 +1,34 @@
+# Veloxa Video Editor — V14.9.1
+
+**Docs refresh.** The in-app README / Installation Guide / Help dialogs (Help menu) were frozen at V13.0 — nine versions of features were missing from the "Features at a glance" list, the auto-update help didn't mention the V14.8.0 stall detection or Download-in-Browser button, and the install guide described the old portable-EXE workflow that V14.8.1 replaced with a proper installer.
+
+## What was stale
+
+1. **Hardcoded "V13.0"** in the README title, install-guide filenames, and all four CLI usage examples.
+2. **Feature list stopped at V13.0** — no mention of the V14.x queue tree, live playback preview, audio-visual templates, macOS support, CPU+GPU parallel slot, batch resume, crash reporter, Add from Folder, AV1 encoders, updater hardening, or the V14.9.0 multi-format picker.
+3. **Install guide inaccuracies** — claimed "portable EXE, no installation needed" (wrong since V14.8.1's installer) and "~390 MB EXE" (V14.9.x Windows installer is 271 MB).
+4. **No macOS install/uninstall instructions** despite macOS support shipping in V14.2.0.
+
+## Fix
+
+- `app/docs.py` now **imports `APP_VERSION`** and interpolates it into the title, filenames, and CLI examples — the docs can never drift from the running build again.
+- Feature list updated through V14.9.0; auto-update section rewritten for the V14.0.1/V14.8.0 hardening; new dedicated "Add from Folder" help section covering the V14.9.0 picker + two-step delete confirmation.
+- Install guide rewritten for the installer-based flow, correct sizes, and macOS Quick Start + uninstall paths.
+
+No engine, encoder, or UI-behaviour changes — help-content only.
+
+## Tests
+
+- 622 / 622 across all 9 suites pass.
+- EXE smoke launch on Windows: clean.
+
+## Downloads
+
+- **Windows:** ``Veloxa-Video-Editor-V14.9.1-Setup.exe`` (271 MB, --onedir)
+- **macOS:** ``Veloxa-Video-Editor-V14.9.1-macOS.dmg`` (~88 MB, ad-hoc signed)
+
+---
+
 # Veloxa Video Editor — V14.9.0
 
 **Feature.** *Add from Folder* now asks you which format to import when a folder holds a mix of file types — and can permanently delete everything else in one sweep.
