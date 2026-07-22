@@ -35,9 +35,8 @@ dst = tmpdir / "out.mp4"
 print(f"Generating test source at {src} ...")
 gen = subprocess.run([
     ffmpeg, "-y",
-    # 60-second source so a 'medium'-preset transcode actually has
-    # something to chew on -- long enough that progress should emit
-    # ~30 times during the encode if it's flowing properly.
+    # 8-second source: long enough for several progress emissions,
+    # short enough that the repro stays fast on any machine.
     "-f", "lavfi", "-i", "testsrc=duration=8:size=640x360:rate=30",
     "-f", "lavfi", "-i", "sine=frequency=440:duration=8",
     "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
@@ -112,16 +111,23 @@ print("Last 5 emissions:")
 for t, i, p in emits[-5:]:
     print(f"  t={t:6.3f}s  idx={i}  pct={p:6.2f}")
 
-# Heuristic: if first emit is later than 50% of total runtime, that's
-# the bug signature (no progress during encode, then a 100% landing).
-first_t = emits[0][0]
-last_t = emits[-1][0]
-if first_t > last_t * 0.5:
+# The bug signature is "silence, then a single 100% landing" -- i.e.
+# NO graduated progress. Assert on the emission PATTERN, not wall-clock
+# timing: on a fast machine the whole encode can finish in under a
+# second, so FFmpeg's ~0.25s progress cadence makes any "first emit
+# within X% of runtime" heuristic a false positive. Graduated
+# emissions (2+ distinct values below 100%) prove progress flowed.
+below_100 = sorted({round(p, 1) for _, _, p in emits if p < 100.0})
+if len(below_100) < 2:
+    first_t = emits[0][0]
+    last_t = emits[-1][0]
     print()
-    print(f"FAIL: first emit at {first_t:.2f}s is more than 50% into runtime "
-          f"({last_t:.2f}s). This is the first-video-0pct signature.")
+    print(f"FAIL: no graduated progress -- only {below_100 or '[]'} seen "
+          f"below 100% (first emit {first_t:.2f}s, runtime {last_t:.2f}s). "
+          "This is the first-video-0pct signature.")
     sys.exit(1)
 
 print()
-print("PASS: progress emissions flowed throughout the encode.")
+print(f"PASS: graduated progress flowed throughout the encode "
+      f"({len(below_100)} distinct values below 100%: {below_100}).")
 sys.exit(0)
