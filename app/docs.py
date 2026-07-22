@@ -26,6 +26,7 @@ the queue survives app restarts and crashes.</p>
 
 <h2>Features at a glance</h2>
 <ul>
+  <li><b>Profile shortcut numbers (V14.10.0)</b> — every profile carries a sticky number (shown as <code>3. MyProfile</code> in every dropdown). Select queue rows and type the number to assign that profile to all of them — multi-digit numbers work (type <code>1</code>&nbsp;<code>2</code> for profile 12; single digits apply instantly when no longer number could match, otherwise after a ~0.7 s pause). Reassign numbers via <i>Profile Manager → Set Number</i> (swaps with the current holder on conflict). Numbers survive renames and profile updates; duplicates and imports never steal an existing number.</li>
   <li><b>Add from Folder multi-format picker (V14.9.0)</b> — when the recursive scan finds more than one file extension in the chosen folder, a picker dialog lists each unique extension (checkbox per extension, all ticked by default). Only ticked extensions get imported. Optional second checkbox permanently deletes every non-chosen file in the folder tree — with an explicit second confirmation dialog showing the exact count + sample paths before anything is removed.</li>
   <li><b>Updater stall detection + Download in Browser (V14.8.0)</b> — the in-app installer download now has a 15 s per-read timeout and a 30 s zero-bytes inactivity detector, so it fails fast with a clear dialog instead of hanging forever behind an aggressive AV or CDN. The update-available dialog gained a fourth <i>Download in Browser</i> button that skips the in-app downloader entirely.</li>
   <li><b>Custom FFmpeg flags + first-launch tour (V14.8.0)</b> — an <b>Extra FFmpeg flags</b> field in the Output tab appends any ``shlex``-parsed arguments to every encode command. A three-step onboarding tour fires ~2 s after first launch (gated by <code>QSettings.onboarding_seen_v1</code>, replayable via Help menu).</li>
@@ -287,7 +288,7 @@ Output tabs. Header actions:</p>
 <ul>
   <li><b>Search box</b> &mdash; <kbd>Ctrl</kbd>+<kbd>F</kbd> &mdash; case-insensitive substring filter.</li>
   <li><b>List + details panel</b> &mdash; selecting a profile shows its codec / encoder / quality / resolution / trim / watermark / stereo / speed / loudness settings.</li>
-  <li><b>New from Current</b>, <b>Edit Selected</b>, <b>Rename</b>, <b>Duplicate</b>, <b>Delete</b>.</li>
+  <li><b>New from Current</b>, <b>Edit Selected</b>, <b>Rename</b>, <b>Set Number</b>, <b>Duplicate</b>, <b>Delete</b>.</li>
   <li><b>Undo / Redo</b> &mdash; <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd> &mdash; reverse any profile mutation. 50-step history.</li>
   <li><b>Import / Export</b> &mdash; share profiles between machines as <code>.vvprof</code> JSON files. Export Selected for a single profile, Export All for a bundle.</li>
   <li><b>Quick: create profile from a watermark image</b> &mdash; pick an image, name the profile, done.</li>
@@ -297,11 +298,25 @@ Output tabs. Header actions:</p>
 profile loads into the main window and the manager closes &rarr; tweak any
 settings &rarr; click <b>Update Profile</b> in the header (or <kbd>Ctrl</kbd>+<kbd>S</kbd>) to save changes back.</p>
 
+<h3>Profile shortcut numbers (V14.10.0)</h3>
+<p>Every profile has a sticky <b>shortcut number</b>, shown as a prefix in every
+profile dropdown (<code>3. MyProfile</code>). To bulk-assign a profile:
+select one or more queue rows and <b>type the number</b> while the queue has
+focus. Single digits apply instantly when no longer number could follow;
+otherwise the app waits ~0.7&nbsp;s for a second digit (so profile 12 is
+typed as <kbd>1</kbd>&nbsp;<kbd>2</kbd>). Numbers above 10 are fully
+supported. Reassign a number with <b>Set Number</b> in the Profile Manager
+&mdash; if the number is taken, the two profiles swap. Numbers survive
+renames and updates; duplicates and imports get fresh numbers instead of
+stealing existing ones.</p>
+
 <h2>Queue management</h2>
 <ul>
   <li><b>Reorder:</b> drag rows up or down (disabled while a batch is running).</li>
   <li><b>Right-click a row:</b> Open Source Folder, Open Output Folder, Change Visual
       (audio only), Apply Profile, Remove, Delete from Disk.</li>
+  <li><b>Assign by number:</b> select rows and type a profile's shortcut
+      number (see <i>Profile shortcut numbers</i> above).</li>
   <li><b>Resume:</b> if the app was closed mid-batch, on next launch you're asked
       whether to restore the previous queue.</li>
   <li><b>Pause / Resume mid-batch (V12.2):</b> click <b>⏸ Pause</b> in the bottom

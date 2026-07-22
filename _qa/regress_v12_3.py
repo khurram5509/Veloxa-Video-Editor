@@ -618,7 +618,7 @@ from app.updater import (
 )
 
 # Version is correctly bumped.
-check("APP_VERSION = '14.9.1'", _APP_VERSION == "14.9.1",
+check("APP_VERSION = '14.10.0'", _APP_VERSION == "14.10.0",
       f"got {_APP_VERSION!r}")
 check("GITHUB_REPO is khurram5509/Veloxa-Video-Editor",
       _u.GITHUB_REPO == "khurram5509/Veloxa-Video-Editor",
@@ -642,7 +642,9 @@ check("'v' prefix tolerated either side",
       _vc("v13.0", "V13.0") == 0)
 
 # is_newer convenience.
-check("is_newer('14.9.1', '13.0')", _newer("14.9.1", "13.0"))
+check("is_newer('14.10.0', '13.0')", _newer("14.10.0", "13.0"))
+check("is_newer('14.10.0', '14.9.1') -- two-digit minor beats 9",
+      _newer("14.10.0", "14.9.1"))
 check("not is_newer('12.9.99', '13.0')",
       not _newer("12.9.99", "13.0"))
 check("not is_newer('13.0', '13.0')",
@@ -731,14 +733,14 @@ check("docs.py advertises auto-update feature",
 
 # Installer.iss + build.ps1 carry the new version.
 iss_src = open(ROOT / "installer.iss", encoding="utf-8").read()
-check("installer.iss AppVersion = 14.9.1", '"14.9.1"' in iss_src)
-check("installer.iss EXE name = V14.9.1.exe",
-      "Veloxa-Video-Editor-V14.9.1.exe" in iss_src)
+check("installer.iss AppVersion = 14.10.0", '"14.10.0"' in iss_src)
+check("installer.iss EXE name = V14.10.0.exe",
+      "Veloxa-Video-Editor-V14.10.0.exe" in iss_src)
 check("installer.iss preserves stable AppId across V12 -> V13",
       "F2E1A8C4-1E5B-4C9A-9B27-VELOXA-VID-V121" in iss_src)
 ps1_src = open(ROOT / "build.ps1", encoding="utf-8").read()
-check("build.ps1 builds V14.9.1 EXE",
-      "Veloxa-Video-Editor-V14.9.1" in ps1_src)
+check("build.ps1 builds V14.10.0 EXE",
+      "Veloxa-Video-Editor-V14.10.0" in ps1_src)
 
 # V14.8.1 crash-fix: stale C++-object guard in _start_update_check.
 mw_src2 = open(ROOT / "app" / "main_window.py", encoding="utf-8").read()

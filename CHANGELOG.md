@@ -1,3 +1,37 @@
+# Veloxa Video Editor — V14.10.0
+
+**Feature.** Profile shortcut numbers — select queue rows, type a number, and that profile is assigned to all of them. Plus full tooltip coverage with screen-reader accessibility (landed on main after V14.9.1).
+
+## Profile shortcut numbers
+
+Every profile now carries a **sticky shortcut number**, displayed as a prefix in every profile dropdown — the header combo, each queue row's picker, the right-click *Apply Profile* menu, and the Profile Manager list all show `3. MyProfile`.
+
+**To bulk-assign:** select one or more queue rows and **type the number** while the queue has focus.
+
+- **More than 10 profiles fully supported.** Digits accumulate: type `1` `2` for profile 12. A single digit applies instantly when no longer number could follow; otherwise the app waits ~0.7 s (the status bar shows the pending number while it waits).
+- **Sticky, not positional.** Numbers are stored inside the profile, so they survive renames, profile updates (Ctrl+S / Update Profile), and re-sorting. Existing profiles are migrated once, numbered alphabetically.
+- **Reassign anytime:** *Profile Manager → ＃ Set Number…* If the number is already taken, the two profiles **swap** — no gaps, no duplicates. The manager's details panel shows each profile's number.
+- **No number theft:** *Duplicate* gives the copy a fresh number; *Import* keeps an imported profile's number only if it's free here.
+- **Safe scoping:** digits only act while the queue list has focus (typing in text fields is never hijacked), and profile changes are blocked mid-batch as before.
+
+## Tooltip + accessibility pass
+
+Complete tooltip coverage across every screen (77 interactive widgets verified by a live offscreen probe), tooltips enabled on all menu actions (Qt hides them by default), and every tooltip mirrored into `accessibleDescription` so screen readers announce it on keyboard focus.
+
+## Also
+
+- Fixed a false positive in the progress-emission diagnostic on fast machines (asserts the real bug signature — graduated emissions — instead of wall-clock timing).
+- New QA suites: tooltip audit (17 checks) + profile numbers (30 checks). Total automated checks now 671 across 11 suites.
+
+## Downloads
+
+- **Windows:** ``Veloxa-Video-Editor-V14.10.0-Setup.exe`` (271 MB, --onedir)
+- **macOS:** ``Veloxa-Video-Editor-V14.10.0-macOS.dmg`` (~88 MB, ad-hoc signed)
+
+Existing users will be offered V14.10.0 via Help → Check for Updates….
+
+---
+
 # Veloxa Video Editor — V14.9.1
 
 **Docs refresh.** The in-app README / Installation Guide / Help dialogs (Help menu) were frozen at V13.0 — nine versions of features were missing from the "Features at a glance" list, the auto-update help didn't mention the V14.8.0 stall detection or Download-in-Browser button, and the install guide described the old portable-EXE workflow that V14.8.1 replaced with a proper installer.

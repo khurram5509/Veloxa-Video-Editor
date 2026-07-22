@@ -1,11 +1,11 @@
-; Inno Setup script for Veloxa Video Editor V14.9.1
+; Inno Setup script for Veloxa Video Editor V14.10.0
 ; Builds a single Windows installer EXE that puts the app under
 ; Program Files, creates Start Menu + Desktop shortcuts, and registers
 ; an uninstaller. Run from the project root after building the app:
 ;
 ;   "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" installer.iss
 ;
-; The output lands in .\installer\Veloxa-Video-Editor-V14.9.1-Setup.exe.
+; The output lands in .\installer\Veloxa-Video-Editor-V14.10.0-Setup.exe.
 ;
 ; V14.8.1 fix: the installed EXE is now ALWAYS named
 ; ``Veloxa-Video-Editor.exe`` (no version in the filename), and the
@@ -19,13 +19,13 @@
 ; versioned files / shortcuts left behind by V11..V14.0.1 installs.
 
 #define AppName             "Veloxa Video Editor"
-#define AppVersion          "14.9.1"
+#define AppVersion          "14.10.0"
 #define AppPublisher        "VeloxaLAB"
 #define AppExeName          "Veloxa-Video-Editor.exe"
 ; The PyInstaller output is still versioned so dist/ shows the build
 ; we're packaging. Inno renames it to AppExeName at install time via
 ; DestName= in [Files].
-#define AppBuildExe         "Veloxa-Video-Editor-V14.9.1.exe"
+#define AppBuildExe         "Veloxa-Video-Editor-V14.10.0.exe"
 ; AppId kept stable since V11.x so installer-driven upgrades replace
 ; the previous Veloxa install in place. Same GUID for the entire
 ; V11.x -> V14.x series. Do NOT change unless you actually want a

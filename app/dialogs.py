@@ -9,8 +9,9 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QDialog, QFileDialog, QGroupBox, QHBoxLayout, QHeaderView, QInputDialog,
-    QLabel, QLineEdit, QListWidget, QMessageBox, QPushButton, QTableWidget,
-    QTableWidgetItem, QTextBrowser, QVBoxLayout, QWidget,
+    QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
+    QPushButton, QTableWidget, QTableWidgetItem, QTextBrowser, QVBoxLayout,
+    QWidget,
 )
 
 
@@ -530,6 +531,13 @@ class ProfileManagerDialog(QDialog):
         rename_btn = QPushButton("✎ Rename...")
         rename_btn.setToolTip("Rename the selected profile (F2)")
         rename_btn.clicked.connect(self._rename_selected)
+        number_btn = QPushButton("＃ Set Number...")
+        number_btn.setToolTip(
+            "Change the selected profile's sticky shortcut number -- "
+            "the number you type on selected queue rows to assign this "
+            "profile. If another profile already uses the number, the "
+            "two profiles swap numbers.")
+        number_btn.clicked.connect(self._set_number_selected)
         dup_btn = QPushButton("⎘ Duplicate")
         dup_btn.setToolTip("Duplicate the selected profile (Ctrl+D)")
         dup_btn.clicked.connect(self._duplicate_selected)
@@ -538,7 +546,8 @@ class ProfileManagerDialog(QDialog):
         del_btn.setToolTip("Delete the selected profile (Delete)")
         del_btn.clicked.connect(self._delete_selected)
         row1.addWidget(new_btn); row1.addWidget(edit_btn)
-        row1.addWidget(rename_btn); row1.addWidget(dup_btn)
+        row1.addWidget(rename_btn); row1.addWidget(number_btn)
+        row1.addWidget(dup_btn)
         row1.addWidget(del_btn)
         v.addLayout(row1)
 
@@ -674,7 +683,11 @@ class ProfileManagerDialog(QDialog):
         for name in sorted(self.profiles.keys(), key=str.lower):
             if needle and needle not in name.lower():
                 continue
-            self.list.addItem(name)
+            # V14.10.0: display the sticky shortcut number; the raw
+            # name travels in UserRole so selection logic stays exact.
+            it = QListWidgetItem(self.main._profile_label(name))
+            it.setData(Qt.ItemDataRole.UserRole, name)
+            self.list.addItem(it)
         self.list.blockSignals(False)
         if prev and prev in self.profiles and self._is_in_list(prev):
             self._select_by_name(prev)
@@ -684,7 +697,9 @@ class ProfileManagerDialog(QDialog):
 
     def _is_in_list(self, name: str) -> bool:
         for i in range(self.list.count()):
-            if self.list.item(i).text() == name:
+            it = self.list.item(i)
+            raw = it.data(Qt.ItemDataRole.UserRole)
+            if (raw if isinstance(raw, str) else it.text()) == name:
                 return True
         return False
 
@@ -702,11 +717,16 @@ class ProfileManagerDialog(QDialog):
 
     def _selected_name(self):
         item = self.list.currentItem()
-        return item.text() if item else None
+        if item is None:
+            return None
+        raw = item.data(Qt.ItemDataRole.UserRole)
+        return raw if isinstance(raw, str) else item.text()
 
     def _select_by_name(self, name: str):
         for i in range(self.list.count()):
-            if self.list.item(i).text() == name:
+            it = self.list.item(i)
+            raw = it.data(Qt.ItemDataRole.UserRole)
+            if (raw if isinstance(raw, str) else it.text()) == name:
                 self.list.setCurrentRow(i)
                 break
 
@@ -724,6 +744,8 @@ class ProfileManagerDialog(QDialog):
                 f"<tr><td style='color:#888;padding-right:14px'>{label}</td>"
                 f"<td>{val}</td></tr>")
 
+        row("Shortcut number",
+            d.get("shortcut_number", "—"))
         row("Codec", str(d.get("out_codec", "h264")).upper())
         row("Encoder", d.get("out_encoder", "(auto)"))
         row("Quality", d.get("out_quality", "Balanced"))
@@ -777,7 +799,7 @@ class ProfileManagerDialog(QDialog):
             if r != QMessageBox.StandardButton.Yes:
                 return
         self._push_undo()
-        self.profiles[name] = self.main._collect_settings_dict()
+        self.main._store_profile(name, self.main._collect_settings_dict())
         self._ensure_visible(name)
         self._persist(f"Created profile: {name}")
         self._refresh_list()
@@ -807,6 +829,26 @@ class ProfileManagerDialog(QDialog):
             f"Editing profile '{name}' - tweak settings, then click "
             "'Update Profile' in the header to save changes")
         self.accept()
+
+    def _set_number_selected(self):
+        """V14.10.0: reassign the selected profile's sticky shortcut
+        number. Swaps with the current holder on conflict."""
+        name = self._selected_name()
+        if not name or name not in self.profiles:
+            return
+        cur = self.main._profile_number(name) or 1
+        n, ok = QInputDialog.getInt(
+            self, "Set Shortcut Number",
+            f"Shortcut number for '{name}'\n(typing this number on "
+            "selected queue rows assigns this profile):",
+            value=cur, min=1, max=999)
+        if not ok or n == cur:
+            return
+        self._push_undo()
+        self.main._set_profile_number(name, n)
+        self._persist(f"Profile '{name}' is now #{n}.")
+        self._refresh_list()
+        self._select_by_name(name)
 
     def _rename_selected(self):
         old = self._selected_name()
@@ -913,7 +955,12 @@ class ProfileManagerDialog(QDialog):
         # of profile_visuals (or any other nested list/dict) on either
         # the source or the duplicate don't bleed into the other.
         import copy as _copy
-        self.profiles[candidate] = _copy.deepcopy(self.profiles[old])
+        dup = _copy.deepcopy(self.profiles[old])
+        # V14.10.0: the duplicate must NOT inherit the original's sticky
+        # shortcut number -- drop it so the next refresh assigns the
+        # lowest free number to the copy while the original keeps its own.
+        dup.pop("shortcut_number", None)
+        self.profiles[candidate] = dup
         self._ensure_visible(candidate)
         self._persist(f"Duplicated: {candidate}")
         self._refresh_list()
@@ -1007,6 +1054,16 @@ class ProfileManagerDialog(QDialog):
             if not snapshotted:
                 self._push_undo()
                 snapshotted = True
+            # V14.10.0: an imported profile keeps its shortcut number
+            # only if that number is free here; otherwise drop it so the
+            # next refresh assigns a fresh one instead of stealing an
+            # existing profile's number.
+            if isinstance(settings, dict):
+                n = settings.get("shortcut_number")
+                holder = (self.main._profile_by_number(n)
+                          if isinstance(n, int) else None)
+                if holder and holder != target:
+                    settings.pop("shortcut_number", None)
             self.profiles[target] = settings
             added += 1
 
@@ -1125,7 +1182,7 @@ class ProfileManagerDialog(QDialog):
         if not settings.get("wm_scale"):
             settings["wm_scale"] = 15
         self._push_undo()
-        self.profiles[name] = settings
+        self.main._store_profile(name, settings)
         self._ensure_visible(name)
         self._persist(f"Created profile: {name}")
         self._refresh_list()

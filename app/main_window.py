@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sys
 import tempfile
 import time
@@ -161,6 +162,28 @@ CODEC_LABELS = {
     CODEC_AV1:  "AV1",
 }
 AUTO_ENCODER = "(auto)"
+
+
+class ProfileCombo(QComboBox):
+    """V14.10.0: combo that DISPLAYS profiles as ``N. Name`` (their
+    sticky shortcut number) while keeping raw-name semantics for the
+    Python API: ``currentText()`` and ``findText()`` operate on the raw
+    profile name stored in ``UserRole``, so the many existing call
+    sites that read/select by name keep working unchanged. Only
+    ``currentTextChanged`` handlers see the display label (Qt emits the
+    visible text) and must parse it via
+    ``MainWindow._profile_name_from_label``."""
+
+    def currentText(self) -> str:
+        d = self.currentData(Qt.ItemDataRole.UserRole)
+        return d if isinstance(d, str) else super().currentText()
+
+    def findText(self, text, *args, **kwargs) -> int:
+        for i in range(self.count()):
+            raw = self.itemData(i, Qt.ItemDataRole.UserRole)
+            if (raw if isinstance(raw, str) else self.itemText(i)) == text:
+                return i
+        return super().findText(text, *args, **kwargs)
 
 
 # ============================================================== MainWindow
@@ -340,11 +363,13 @@ class MainWindow(QMainWindow):
         h.addStretch()
 
         h.addWidget(QLabel("Profile:"))
-        self.profile_combo = QComboBox()
+        self.profile_combo = ProfileCombo()
         self.profile_combo.setToolTip(
             "Load a saved settings profile. Selecting one applies its "
             "Trim, Watermark, Audio Visuals, and Output settings to the "
-            "whole window.")
+            "whole window. The number before each name is its sticky "
+            "shortcut: select queue rows and type that number to assign "
+            "the profile to them.")
         self.profile_combo.setMinimumWidth(220)
         self.profile_combo.currentTextChanged.connect(self._on_profile_changed)
         h.addWidget(self.profile_combo)
@@ -452,7 +477,8 @@ class MainWindow(QMainWindow):
         self.clear_btn.clicked.connect(self._clear_queue)
         hint = QLabel(
             "Drag-drop files. Click to select, Ctrl / Shift + click for "
-            "multi. Drag rows to reorder. Right-click for more.")
+            "multi. Drag rows to reorder. Right-click for more. Type a "
+            "profile's number to assign it to the selected rows.")
         hint.setProperty("role", "muted")
         hint.setWordWrap(True)
         row.addWidget(self.add_btn)
@@ -2076,6 +2102,24 @@ class MainWindow(QMainWindow):
         del_sc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         del_sc.activated.connect(self._remove_selected)
 
+        # V14.10.0: profile shortcut numbers. With queue rows selected,
+        # typing a profile's sticky number assigns that profile to every
+        # selected row. Digits accumulate in a short buffer so numbers
+        # above 9 work: '1' waits ~700 ms in case '12' is coming; the
+        # buffer applies immediately when no higher number could still
+        # match. Scoped to the queue list so typing in text fields is
+        # never hijacked.
+        self._digit_buffer = ""
+        self._digit_timer = QTimer(self)
+        self._digit_timer.setSingleShot(True)
+        self._digit_timer.setInterval(700)
+        self._digit_timer.timeout.connect(self._apply_digit_buffer)
+        for _d in "0123456789":
+            ds = QShortcut(QKeySequence(_d), self.file_list)
+            ds.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            ds.activated.connect(
+                lambda dd=_d: self._on_profile_digit(dd))
+
         # Surface the new bindings on the most-used buttons.
         self.add_btn.setToolTip("Add files to the queue (Ctrl+O)")
         self.remove_btn.setToolTip("Remove selected items (Delete)")
@@ -2087,6 +2131,53 @@ class MainWindow(QMainWindow):
         interfere with normal widget Esc handling."""
         if self.batch and self.batch.is_running():
             self._cancel_batch()
+
+    # ---------------------------------- V14.10.0 profile digit shortcut
+
+    def _on_profile_digit(self, digit: str):
+        """A digit was typed while the queue list had focus: accumulate
+        it toward a profile shortcut number. Applies immediately when no
+        longer number could still match (e.g. '4' with no #40+); else
+        waits out the 700 ms timer so multi-digit numbers ('12') land."""
+        if self._queue_locked:
+            self.status_lbl.setText(
+                "Profiles can't be changed while a batch is running.")
+            return
+        self._digit_buffer += digit
+        buf = self._digit_buffer
+        numbers = {str(self._profile_number(n))
+                   for n in self.profiles
+                   if self._profile_number(n) is not None}
+        extendable = any(s.startswith(buf) and s != buf for s in numbers)
+        if extendable:
+            self.status_lbl.setText(
+                f"Profile #{buf}… (keep typing, or pause to apply)")
+            self._digit_timer.start()
+        else:
+            self._digit_timer.stop()
+            self._apply_digit_buffer()
+
+    def _apply_digit_buffer(self):
+        buf, self._digit_buffer = self._digit_buffer, ""
+        if not buf:
+            return
+        try:
+            n = int(buf)
+        except ValueError:
+            return
+        name = self._profile_by_number(n)
+        if not name:
+            self.status_lbl.setText(f"No profile has shortcut number {n}.")
+            return
+        items = self.file_list.selectedItems()
+        if not items:
+            self.status_lbl.setText(
+                f"Select queue rows first, then type {n} to apply "
+                f"'{name}'.")
+            return
+        self._apply_profile_to_items(items, name)
+        self.status_lbl.setText(
+            f"Profile #{n} '{name}' applied to {len(items)} item(s).")
 
     def _save_or_update_profile(self):
         """Ctrl+S: update the loaded profile if any, otherwise Save As."""
@@ -2808,7 +2899,7 @@ class MainWindow(QMainWindow):
         # if the originals get moved or deleted (V11.1).
         d = self._collect_settings_dict()
         d = copy_assets_into_profile(name, d)
-        self.profiles[name] = d
+        self._store_profile(name, d)
         self._save_profiles()
         # UI-fix: invalidate the per-batch row-opts cache so the next
         # Start picks up the newly-updated profile, and re-paint the
@@ -3611,7 +3702,7 @@ class MainWindow(QMainWindow):
         pb.setVisible(False)
         h.addWidget(pb)
 
-        pc = QComboBox()
+        pc = ProfileCombo()
         pc.setMinimumWidth(140)
         pc.setMaximumWidth(220)
         # NB no setMaximumHeight() here — Windows QComboBox needs ~26px
@@ -3619,7 +3710,8 @@ class MainWindow(QMainWindow):
         # tighter than that can leave the combo invisible.
         pc.setToolTip("Profile to use when this row is encoded.\n"
                       "Right-click any selected rows and use 'Apply "
-                      "Profile…' to change many at once.")
+                      "Profile…' to change many at once — or select "
+                      "rows and type a profile's shortcut number.")
         # Populate with NO_PROFILE + saved names; current value = row's
         # profile_name (falling back to NO_PROFILE if unknown).
         self._populate_profile_combo(pc)
@@ -3741,16 +3833,20 @@ class MainWindow(QMainWindow):
 
     def _populate_profile_combo(self, combo):
         """Fill a per-row profile picker with NO_PROFILE plus saved
-        profile names sorted case-insensitively."""
+        profile names sorted case-insensitively, displayed with their
+        sticky shortcut numbers (V14.10.0)."""
         combo.blockSignals(True)
         combo.clear()
-        combo.addItem(NO_PROFILE)
+        combo.addItem(NO_PROFILE, userData=NO_PROFILE)
         for name in sorted(self.profiles.keys(), key=str.lower):
-            combo.addItem(name)
+            combo.addItem(self._profile_label(name), userData=name)
         combo.blockSignals(False)
 
     def _on_row_profile_changed(self, item, new_name: str):
-        """User picked a different profile in a row's combo box."""
+        """User picked a different profile in a row's combo box.
+        ``currentTextChanged`` emits the DISPLAY label ('N. Name') --
+        map it back to the raw profile name first (V14.10.0)."""
+        new_name = self._profile_name_from_label(new_name)
         if self._queue_locked:
             # Bounce back: the row was assigned at queue-build time; we
             # don't allow per-row changes mid-batch.
@@ -3984,7 +4080,7 @@ class MainWindow(QMainWindow):
         profile_actions = {}
         if self.profiles:
             for pname in sorted(self.profiles.keys(), key=str.lower):
-                a = apply_menu.addAction(pname)
+                a = apply_menu.addAction(self._profile_label(pname))
                 profile_actions[a] = pname
         else:
             empty = apply_menu.addAction("(no saved profiles)")
@@ -4768,16 +4864,100 @@ class MainWindow(QMainWindow):
         except (json.JSONDecodeError, TypeError):
             data = {}
         self.profiles = data if isinstance(data, dict) else {}
+        self._ensure_profile_numbers()
+
+    # -------------------------------------------- V14.10.0 profile numbers
+
+    def _ensure_profile_numbers(self) -> bool:
+        """Every profile carries a sticky ``shortcut_number`` (int >= 1,
+        unique). Profiles from older versions (or imports) that lack a
+        valid number -- or collide with an existing one -- get the
+        lowest free number, assigned in alphabetical order so migration
+        is deterministic. Returns True when anything changed (caller
+        may persist)."""
+        used: set = set()
+        changed = False
+        for name in sorted(self.profiles.keys(), key=str.lower):
+            d = self.profiles[name]
+            if not isinstance(d, dict):
+                continue
+            n = d.get("shortcut_number")
+            if isinstance(n, int) and n >= 1 and n not in used:
+                used.add(n)
+            else:
+                n = 1
+                while n in used:
+                    n += 1
+                d["shortcut_number"] = n
+                used.add(n)
+                changed = True
+        return changed
+
+    def _profile_number(self, name: str):
+        d = self.profiles.get(name)
+        n = d.get("shortcut_number") if isinstance(d, dict) else None
+        return n if isinstance(n, int) and n >= 1 else None
+
+    def _profile_by_number(self, n: int):
+        for name, d in self.profiles.items():
+            if isinstance(d, dict) and d.get("shortcut_number") == n:
+                return name
+        return None
+
+    def _set_profile_number(self, name: str, n: int):
+        """Assign sticky number ``n`` to ``name``. If another profile
+        already holds ``n``, the two profiles swap numbers -- no gaps,
+        no duplicates, fully predictable."""
+        if name not in self.profiles or n < 1:
+            return
+        holder = self._profile_by_number(n)
+        old = self._profile_number(name)
+        if holder and holder != name and old is not None:
+            self.profiles[holder]["shortcut_number"] = old
+        self.profiles[name]["shortcut_number"] = n
+
+    def _store_profile(self, name: str, d: dict):
+        """Assign a (re)collected settings dict to ``name`` while
+        preserving an existing sticky shortcut number -- fresh dicts
+        from ``_collect_settings_dict`` never carry one, and updating a
+        profile must not cost it its number."""
+        prev = self._profile_number(name)
+        if prev is not None:
+            d["shortcut_number"] = prev
+        self.profiles[name] = d
+
+    def _profile_label(self, name: str) -> str:
+        """Display label for combos / menus: ``N. Name`` (raw name when
+        the profile has no number, e.g. the NO_PROFILE sentinel)."""
+        n = self._profile_number(name)
+        return f"{n}. {name}" if n is not None else name
+
+    def _profile_name_from_label(self, label: str) -> str:
+        """Inverse of :meth:`_profile_label` for currentTextChanged
+        handlers (Qt emits the DISPLAY text). Exact profile names win
+        first so a profile literally called '12. Foo' round-trips."""
+        if label in self.profiles or label == NO_PROFILE:
+            return label
+        m = re.match(r"^(\d+)\.\s(.*)$", label)
+        if m and m.group(2) in self.profiles:
+            return m.group(2)
+        return label
 
     def _save_profiles(self):
         self.settings.setValue("profiles", json.dumps(self.profiles))
 
     def _refresh_profile_combo(self):
+        # V14.10.0: newly created / imported profiles pick up a sticky
+        # shortcut number here -- every mutation path funnels through
+        # this refresh, so numbering can never drift.
+        if self._ensure_profile_numbers():
+            self._save_profiles()
         self.profile_combo.blockSignals(True)
         self.profile_combo.clear()
-        self.profile_combo.addItem(NO_PROFILE)
+        self.profile_combo.addItem(NO_PROFILE, userData=NO_PROFILE)
         for name in sorted(self.profiles.keys(), key=str.lower):
-            self.profile_combo.addItem(name)
+            self.profile_combo.addItem(self._profile_label(name),
+                                       userData=name)
         last = self.settings.value("last_profile", NO_PROFILE)
         idx = self.profile_combo.findText(last)
         self.profile_combo.setCurrentIndex(idx if idx >= 0 else 0)
@@ -4792,6 +4972,9 @@ class MainWindow(QMainWindow):
     def _on_profile_changed(self, name):
         if self._suppress_change:
             return
+        # currentTextChanged emits the display label ('N. Name') --
+        # map back to the raw profile name (V14.10.0).
+        name = self._profile_name_from_label(name)
         # Always reflect dropdown state, even when "(no profile)" selected.
         self._update_profile_button_state()
         if name == NO_PROFILE or name not in self.profiles:
@@ -4830,7 +5013,7 @@ class MainWindow(QMainWindow):
         # video) into the profile's in-app asset folder so the profile
         # survives the user moving / deleting the originals.
         d = copy_assets_into_profile(name, d)
-        self.profiles[name] = d
+        self._store_profile(name, d)
         self._save_profiles()
         self._refresh_profile_combo()
         idx = self.profile_combo.findText(name)
