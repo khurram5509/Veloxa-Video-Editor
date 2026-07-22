@@ -10,11 +10,22 @@ from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QDialog, QFileDialog, QGroupBox, QHBoxLayout, QHeaderView, QInputDialog,
     QLabel, QLineEdit, QListWidget, QMessageBox, QPushButton, QTableWidget,
-    QTableWidgetItem, QTextBrowser, QVBoxLayout,
+    QTableWidgetItem, QTextBrowser, QVBoxLayout, QWidget,
 )
 
 
 NO_PROFILE = "(no profile)"
+
+
+def mirror_tooltips_to_accessibility(root: QWidget) -> None:
+    """Tooltips only show on mouse hover, so screen readers never see
+    them. Copy each widget's tooltip into its accessibleDescription,
+    which assistive technology announces on keyboard focus. Call once
+    at the end of a dialog's __init__ (main_window does the same for
+    its own widget tree at startup)."""
+    for w in root.findChildren(QWidget):
+        if w.toolTip() and not w.accessibleDescription():
+            w.setAccessibleDescription(w.toolTip())
 
 
 # ============================================================== WatchFolderDialog
@@ -54,11 +65,15 @@ class WatchFolderDialog(QDialog):
         self.folder_path = QLineEdit()
         self.folder_path.setReadOnly(True)
         self.folder_path.setPlaceholderText("(no folder selected)")
+        self.folder_path.setToolTip(
+            "Folder monitored for new media files. Use Browse to "
+            "change it.")
         existing = parent.settings.value("watch_folder", "")
         if existing:
             self.folder_path.setText(existing)
         row.addWidget(self.folder_path, 1)
         browse = QPushButton("📂 Browse...")
+        browse.setToolTip("Choose the folder to watch.")
         browse.clicked.connect(self._pick_folder)
         row.addWidget(browse)
         v.addLayout(row)
@@ -68,6 +83,10 @@ class WatchFolderDialog(QDialog):
         self.done_subfolder = QLineEdit(
             parent.settings.value("watch_done_subfolder", "done"))
         self.done_subfolder.setMaxLength(64)
+        self.done_subfolder.setToolTip(
+            "Name of the subfolder (created inside the watched folder) "
+            "where successfully-encoded source files are moved so they "
+            "aren't processed twice.")
         row2.addWidget(self.done_subfolder, 1)
         v.addLayout(row2)
 
@@ -84,9 +103,15 @@ class WatchFolderDialog(QDialog):
         bottom.addStretch()
         self.start_btn = QPushButton("▶ Start Watching")
         self.start_btn.setObjectName("primary")
+        self.start_btn.setToolTip(
+            "Begin monitoring the folder. New media files are added to "
+            "the queue and encoded automatically.")
         self.start_btn.clicked.connect(self._on_start)
         self.stop_btn = QPushButton("■ Stop")
         self.stop_btn.setObjectName("danger")
+        self.stop_btn.setToolTip(
+            "Stop monitoring. Files already in the queue are not "
+            "removed.")
         self.stop_btn.clicked.connect(self._on_stop)
         close_btn = QPushButton("✕ Close")
         close_btn.clicked.connect(self.accept)
@@ -96,6 +121,7 @@ class WatchFolderDialog(QDialog):
         v.addLayout(bottom)
 
         self._refresh_state()
+        mirror_tooltips_to_accessibility(self)
 
     def _pick_folder(self):
         f = QFileDialog.getExistingDirectory(
@@ -215,17 +241,28 @@ class ManageSavedDataDialog(QDialog):
 
         row = QHBoxLayout()
         self.refresh_btn = QPushButton("🔄 Refresh")
+        self.refresh_btn.setToolTip("Re-scan the saved data and update the table.")
         self.refresh_btn.clicked.connect(self._refresh)
         row.addWidget(self.refresh_btn)
         self.open_btn = QPushButton("📂 Open Folder")
+        self.open_btn.setToolTip(
+            "Open the folder where profile assets are stored, in your "
+            "file manager.")
         self.open_btn.clicked.connect(self._open_folder)
         row.addWidget(self.open_btn)
         row.addStretch()
         self.del_one_btn = QPushButton("🗑 Delete Selected")
+        self.del_one_btn.setToolTip(
+            "Delete the selected profile's saved watermark files. The "
+            "profile itself is kept, but it will need its watermark "
+            "files re-picked to keep working.")
         self.del_one_btn.clicked.connect(self._delete_selected)
         row.addWidget(self.del_one_btn)
         self.del_all_btn = QPushButton("🗑 Delete ALL")
         self.del_all_btn.setObjectName("danger")
+        self.del_all_btn.setToolTip(
+            "Delete every profile's saved watermark files to reclaim "
+            "disk space. Asks for confirmation first.")
         self.del_all_btn.clicked.connect(self._delete_all)
         row.addWidget(self.del_all_btn)
         close_btn = QPushButton("✕ Close")
@@ -236,6 +273,7 @@ class ManageSavedDataDialog(QDialog):
         v.addLayout(row)
 
         self._refresh()
+        mirror_tooltips_to_accessibility(self)
 
     # ------------------------------------------------------ helpers
 
@@ -409,6 +447,7 @@ class ProfileManagerDialog(QDialog):
         self._refresh_list()
         self._install_shortcuts()
         self._update_undo_buttons()
+        mirror_tooltips_to_accessibility(self)
 
     # Convenience: read/write straight against the main window's profiles.
     @property
@@ -532,10 +571,16 @@ class ProfileManagerDialog(QDialog):
         self.quick_img_path = QLineEdit()
         self.quick_img_path.setPlaceholderText("(no image selected)")
         self.quick_img_path.setReadOnly(True)
+        self.quick_img_path.setToolTip(
+            "Watermark image for the quick-created profile.")
         pick_btn = QPushButton("📂 Pick Image...")
+        pick_btn.setToolTip("Choose the watermark image.")
         pick_btn.clicked.connect(self._pick_quick_image)
         create_btn = QPushButton("＋ Create Profile")
         create_btn.setObjectName("primary")
+        create_btn.setToolTip(
+            "Create a new profile named after the image, using current "
+            "main-window settings plus this image as the watermark.")
         create_btn.clicked.connect(self._create_from_image)
         qh.addWidget(QLabel("Image:"))
         qh.addWidget(self.quick_img_path, 1)
@@ -547,6 +592,9 @@ class ProfileManagerDialog(QDialog):
         bottom.addStretch()
         load_btn = QPushButton("▶ Load Selected")
         load_btn.setObjectName("primary")
+        load_btn.setToolTip(
+            "Apply the selected profile to the main window and close "
+            "this dialog.")
         load_btn.clicked.connect(self._load_and_close)
         close_btn = QPushButton("✕ Close")
         close_btn.clicked.connect(self.accept)

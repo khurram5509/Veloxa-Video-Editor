@@ -111,7 +111,7 @@ from . import widgets as widgets_mod
 from .widgets import TrimSeekBar, DropList, QueueItemData
 from .dialogs import (
     ProfileManagerDialog, WatchFolderDialog, ManageSavedDataDialog,
-    show_info_dialog, NO_PROFILE,
+    show_info_dialog, NO_PROFILE, mirror_tooltips_to_accessibility,
 )
 from .watch_folder import FolderWatcher
 from .docs import README_HTML, INSTALL_HTML, HELP_HTML, LICENSE_HTML
@@ -304,6 +304,15 @@ class MainWindow(QMainWindow):
         # Onboarding Tour.
         QTimer.singleShot(2200, self._maybe_show_onboarding_tour)
 
+        # Tooltip audit: tooltips only show on mouse hover, so assistive
+        # technology (screen readers) never sees them. Mirror every
+        # tooltip into the widget's accessibleDescription, which IS
+        # announced on keyboard focus. One pass at startup covers all
+        # statically-built widgets; widgets whose tooltip changes at
+        # runtime (e.g. the Pause/Resume button) keep their initial
+        # description, which stays accurate as a purpose summary.
+        mirror_tooltips_to_accessibility(self)
+
     # ============================================================== UI build
 
     def _build_ui(self):
@@ -332,6 +341,10 @@ class MainWindow(QMainWindow):
 
         h.addWidget(QLabel("Profile:"))
         self.profile_combo = QComboBox()
+        self.profile_combo.setToolTip(
+            "Load a saved settings profile. Selecting one applies its "
+            "Trim, Watermark, Audio Visuals, and Output settings to the "
+            "whole window.")
         self.profile_combo.setMinimumWidth(220)
         self.profile_combo.currentTextChanged.connect(self._on_profile_changed)
         h.addWidget(self.profile_combo)
@@ -414,6 +427,11 @@ class MainWindow(QMainWindow):
         # prompting (or auto-assign), watch-folder logic, and the
         # mid-batch add_jobs() hook all work without changes.
         self.add_folder_btn = QPushButton("📂 Add from Folder...")
+        self.add_folder_btn.setToolTip(
+            "Scan a folder (including all subfolders) and add every "
+            "supported video / audio file to the queue. If the folder "
+            "mixes several file formats you will be asked which ones to "
+            "import.")
         self.add_folder_btn.clicked.connect(self._on_add_folder_clicked)
         self.remove_btn = QPushButton("− Remove Selected")
         self.remove_btn.clicked.connect(self._remove_selected)
@@ -428,6 +446,9 @@ class MainWindow(QMainWindow):
             "Remove all finished items (done + failed + cancelled).")
         self.clear_done_btn.clicked.connect(self._remove_completed)
         self.clear_btn = QPushButton("✕ Clear All")
+        self.clear_btn.setToolTip(
+            "Remove every item from the queue (asks for confirmation "
+            "first). Source files on disk are never touched.")
         self.clear_btn.clicked.connect(self._clear_queue)
         hint = QLabel(
             "Drag-drop files. Click to select, Ctrl / Shift + click for "
@@ -599,6 +620,9 @@ class MainWindow(QMainWindow):
             self.mp_pos_lbl.setText("playback unavailable")
 
         self.seek_bar = TrimSeekBar()
+        self.seek_bar.setToolTip(
+            "Click or drag to preview any point in the file. Drag the "
+            "orange handles to set the trim start / end visually.")
         self.seek_bar.seek_changed.connect(self._on_seek_changed)
         self.seek_bar.trim_changed.connect(self._on_trim_changed_from_bar)
         self.seek_bar.drag_finished.connect(self._refresh_preview)
@@ -647,6 +671,14 @@ class MainWindow(QMainWindow):
                     "Audio Visuals")
         tabs.addTab(self._wrap_in_scroll(self._build_output_tab()),
                     "Output")
+        tabs.setTabToolTip(0, "Cut time off the start / end of each output.")
+        tabs.setTabToolTip(1, "Overlay an image, video, or text watermark.")
+        tabs.setTabToolTip(
+            2, "Choose the visuals or animated template shown for "
+               "audio-only inputs.")
+        tabs.setTabToolTip(
+            3, "Codec, quality, resolution, speed, intro / outro, and "
+               "output filename settings.")
         return tabs
 
     def _describe_gpu_status(self) -> str:
@@ -943,9 +975,15 @@ class MainWindow(QMainWindow):
         self.trim_start = QDoubleSpinBox()
         self.trim_start.setRange(0, 99999)
         self.trim_start.setDecimals(2); self.trim_start.setSuffix(" s")
+        self.trim_start.setToolTip(
+            "Seconds to cut from the beginning of the output. "
+            "0 = keep the original start.")
         self.trim_end = QDoubleSpinBox()
         self.trim_end.setRange(0, 99999)
         self.trim_end.setDecimals(2); self.trim_end.setSuffix(" s")
+        self.trim_end.setToolTip(
+            "Seconds to cut from the end of the output. "
+            "0 = keep the original end.")
         g.addWidget(QLabel("Trim from start:"), 0, 0)
         g.addWidget(self.trim_start, 0, 1)
         g.addWidget(QLabel("Trim from end:"), 1, 0)
@@ -977,9 +1015,14 @@ class MainWindow(QMainWindow):
         r = 0
         self.wm_path = QLineEdit()
         self.wm_path.setPlaceholderText("(no image watermark)")
+        self.wm_path.setToolTip(
+            "Path to the watermark image. PNG with transparency "
+            "recommended. Leave empty for no image watermark.")
         wm_browse = QPushButton("📂 Browse...")
+        wm_browse.setToolTip("Choose a watermark image file.")
         wm_browse.clicked.connect(self._pick_watermark)
         wm_clear = QPushButton("✕ Clear")
+        wm_clear.setToolTip("Remove the image watermark.")
         wm_clear.clicked.connect(lambda: self.wm_path.setText(""))
         g.addWidget(QLabel("Image:"), r, 0)
         g.addWidget(self.wm_path, r, 1, 1, 2)
@@ -989,14 +1032,21 @@ class MainWindow(QMainWindow):
         self.wm_preset = QComboBox()
         self.wm_preset.addItems(POSITION_PRESETS)
         self.wm_preset.setCurrentText("Bottom-Right")
+        self.wm_preset.setToolTip(
+            "Corner or edge of the frame the watermark is anchored to. "
+            "Fine-tune with Offset X / Y below.")
         g.addWidget(QLabel("Position:"), r, 0)
         g.addWidget(self.wm_preset, r, 1, 1, 4)
         r += 1
 
         self.wm_off_x = QSpinBox()
         self.wm_off_x.setRange(-4000, 4000); self.wm_off_x.setSuffix(" px")
+        self.wm_off_x.setToolTip(
+            "Horizontal shift from the anchored position, in pixels.")
         self.wm_off_y = QSpinBox()
         self.wm_off_y.setRange(-4000, 4000); self.wm_off_y.setSuffix(" px")
+        self.wm_off_y.setToolTip(
+            "Vertical shift from the anchored position, in pixels.")
         g.addWidget(QLabel("Offset X:"), r, 0); g.addWidget(self.wm_off_x, r, 1)
         g.addWidget(QLabel("Y:"), r, 2); g.addWidget(self.wm_off_y, r, 3)
         r += 1
@@ -1004,12 +1054,16 @@ class MainWindow(QMainWindow):
         self.wm_padding = QSpinBox()
         self.wm_padding.setRange(0, 1000); self.wm_padding.setSuffix(" px")
         self.wm_padding.setValue(20)
+        self.wm_padding.setToolTip(
+            "Minimum gap kept between the watermark and the frame edges.")
         g.addWidget(QLabel("Edge padding:"), r, 0)
         g.addWidget(self.wm_padding, r, 1, 1, 4)
         r += 1
 
         self.wm_opacity = QSlider(Qt.Orientation.Horizontal)
         self.wm_opacity.setRange(0, 100); self.wm_opacity.setValue(100)
+        self.wm_opacity.setToolTip(
+            "Watermark opacity: 100% = solid, lower = more transparent.")
         self.wm_opacity_lbl = QLabel("100%")
         self.wm_opacity.valueChanged.connect(
             lambda v: self.wm_opacity_lbl.setText(f"{v}%"))
@@ -1020,6 +1074,8 @@ class MainWindow(QMainWindow):
 
         self.wm_scale = QSlider(Qt.Orientation.Horizontal)
         self.wm_scale.setRange(1, 100); self.wm_scale.setValue(15)
+        self.wm_scale.setToolTip(
+            "Watermark width as a percentage of the output video width.")
         self.wm_scale_lbl = QLabel("15% of width")
         self.wm_scale.valueChanged.connect(
             lambda v: self.wm_scale_lbl.setText(f"{v}% of width"))
@@ -1035,9 +1091,14 @@ class MainWindow(QMainWindow):
         r = 0
         self.vid_wm_path = QLineEdit()
         self.vid_wm_path.setPlaceholderText("(no video watermark)")
+        self.vid_wm_path.setToolTip(
+            "Path to a video clip overlaid on the output (e.g. an "
+            "animated logo). Leave empty for no video watermark.")
         vid_browse = QPushButton("📂 Browse...")
+        vid_browse.setToolTip("Choose a video clip to overlay.")
         vid_browse.clicked.connect(self._pick_video_watermark)
         vid_clear = QPushButton("✕ Clear")
+        vid_clear.setToolTip("Remove the video watermark.")
         vid_clear.clicked.connect(lambda: self.vid_wm_path.setText(""))
         g.addWidget(QLabel("Video:"), r, 0)
         g.addWidget(self.vid_wm_path, r, 1, 1, 2)
@@ -1055,14 +1116,21 @@ class MainWindow(QMainWindow):
         self.vid_wm_preset = QComboBox()
         self.vid_wm_preset.addItems(POSITION_PRESETS)
         self.vid_wm_preset.setCurrentText("Top-Right")
+        self.vid_wm_preset.setToolTip(
+            "Corner or edge of the frame the video watermark is anchored "
+            "to. Fine-tune with Offset X / Y below.")
         g.addWidget(QLabel("Position:"), r, 0)
         g.addWidget(self.vid_wm_preset, r, 1, 1, 4)
         r += 1
 
         self.vid_wm_off_x = QSpinBox()
         self.vid_wm_off_x.setRange(-4000, 4000); self.vid_wm_off_x.setSuffix(" px")
+        self.vid_wm_off_x.setToolTip(
+            "Horizontal shift from the anchored position, in pixels.")
         self.vid_wm_off_y = QSpinBox()
         self.vid_wm_off_y.setRange(-4000, 4000); self.vid_wm_off_y.setSuffix(" px")
+        self.vid_wm_off_y.setToolTip(
+            "Vertical shift from the anchored position, in pixels.")
         g.addWidget(QLabel("Offset X:"), r, 0); g.addWidget(self.vid_wm_off_x, r, 1)
         g.addWidget(QLabel("Y:"), r, 2); g.addWidget(self.vid_wm_off_y, r, 3)
         r += 1
@@ -1070,12 +1138,16 @@ class MainWindow(QMainWindow):
         self.vid_wm_padding = QSpinBox()
         self.vid_wm_padding.setRange(0, 1000); self.vid_wm_padding.setSuffix(" px")
         self.vid_wm_padding.setValue(20)
+        self.vid_wm_padding.setToolTip(
+            "Minimum gap kept between the watermark and the frame edges.")
         g.addWidget(QLabel("Edge padding:"), r, 0)
         g.addWidget(self.vid_wm_padding, r, 1, 1, 4)
         r += 1
 
         self.vid_wm_opacity = QSlider(Qt.Orientation.Horizontal)
         self.vid_wm_opacity.setRange(0, 100); self.vid_wm_opacity.setValue(100)
+        self.vid_wm_opacity.setToolTip(
+            "Watermark opacity: 100% = solid, lower = more transparent.")
         self.vid_wm_opacity_lbl = QLabel("100%")
         self.vid_wm_opacity.valueChanged.connect(
             lambda v: self.vid_wm_opacity_lbl.setText(f"{v}%"))
@@ -1086,6 +1158,8 @@ class MainWindow(QMainWindow):
 
         self.vid_wm_scale = QSlider(Qt.Orientation.Horizontal)
         self.vid_wm_scale.setRange(1, 100); self.vid_wm_scale.setValue(20)
+        self.vid_wm_scale.setToolTip(
+            "Watermark width as a percentage of the output video width.")
         self.vid_wm_scale_lbl = QLabel("20% of width")
         self.vid_wm_scale.valueChanged.connect(
             lambda v: self.vid_wm_scale_lbl.setText(f"{v}% of width"))
@@ -1111,6 +1185,9 @@ class MainWindow(QMainWindow):
         r = 0
         self.text_wm_text = QLineEdit()
         self.text_wm_text.setPlaceholderText("(no text watermark)")
+        self.text_wm_text.setToolTip(
+            "Text drawn onto every frame (e.g. a channel name or "
+            "copyright line). Leave empty for no text watermark.")
         g.addWidget(QLabel("Text:"), r, 0)
         g.addWidget(self.text_wm_text, r, 1, 1, 4)
         r += 1
@@ -1118,12 +1195,17 @@ class MainWindow(QMainWindow):
         self.text_wm_size = QSpinBox()
         self.text_wm_size.setRange(8, 400); self.text_wm_size.setValue(36)
         self.text_wm_size.setSuffix(" px")
+        self.text_wm_size.setToolTip(
+            "Font size of the text watermark, in pixels of the output "
+            "frame.")
         g.addWidget(QLabel("Font size:"), r, 0)
         g.addWidget(self.text_wm_size, r, 1)
 
         self.text_wm_color_btn = QPushButton("🎨 Color...")
+        self.text_wm_color_btn.setToolTip("Pick the text colour.")
         self.text_wm_color_btn.clicked.connect(self._pick_text_color)
         self.text_wm_color_swatch = QFrame()
+        self.text_wm_color_swatch.setToolTip("Current text colour.")
         self.text_wm_color_swatch.setFixedSize(28, 22)
         self.text_wm_color_swatch.setStyleSheet(
             "background:#ffffff; border:1px solid #454952; border-radius:3px;")
@@ -1135,14 +1217,21 @@ class MainWindow(QMainWindow):
         self.text_wm_preset = QComboBox()
         self.text_wm_preset.addItems(POSITION_PRESETS)
         self.text_wm_preset.setCurrentText("Bottom-Left")
+        self.text_wm_preset.setToolTip(
+            "Corner or edge of the frame the text is anchored to. "
+            "Fine-tune with Offset X / Y below.")
         g.addWidget(QLabel("Position:"), r, 0)
         g.addWidget(self.text_wm_preset, r, 1, 1, 4)
         r += 1
 
         self.text_wm_off_x = QSpinBox()
         self.text_wm_off_x.setRange(-4000, 4000); self.text_wm_off_x.setSuffix(" px")
+        self.text_wm_off_x.setToolTip(
+            "Horizontal shift from the anchored position, in pixels.")
         self.text_wm_off_y = QSpinBox()
         self.text_wm_off_y.setRange(-4000, 4000); self.text_wm_off_y.setSuffix(" px")
+        self.text_wm_off_y.setToolTip(
+            "Vertical shift from the anchored position, in pixels.")
         g.addWidget(QLabel("Offset X:"), r, 0); g.addWidget(self.text_wm_off_x, r, 1)
         g.addWidget(QLabel("Y:"), r, 2); g.addWidget(self.text_wm_off_y, r, 3)
         r += 1
@@ -1150,12 +1239,16 @@ class MainWindow(QMainWindow):
         self.text_wm_padding = QSpinBox()
         self.text_wm_padding.setRange(0, 1000); self.text_wm_padding.setValue(20)
         self.text_wm_padding.setSuffix(" px")
+        self.text_wm_padding.setToolTip(
+            "Minimum gap kept between the text and the frame edges.")
         g.addWidget(QLabel("Edge padding:"), r, 0)
         g.addWidget(self.text_wm_padding, r, 1, 1, 4)
         r += 1
 
         self.text_wm_opacity = QSlider(Qt.Orientation.Horizontal)
         self.text_wm_opacity.setRange(0, 100); self.text_wm_opacity.setValue(100)
+        self.text_wm_opacity.setToolTip(
+            "Text opacity: 100% = solid, lower = more transparent.")
         self.text_wm_opacity_lbl = QLabel("100%")
         self.text_wm_opacity.valueChanged.connect(
             lambda v: self.text_wm_opacity_lbl.setText(f"{v}%"))
@@ -1255,15 +1348,25 @@ class MainWindow(QMainWindow):
 
         col = QVBoxLayout()
         self.pv_add_btn = QPushButton("＋ Add...")
+        self.pv_add_btn.setToolTip(
+            "Add images or video clips to the visuals rotation.")
         self.pv_add_btn.clicked.connect(self._pv_add)
         col.addWidget(self.pv_add_btn)
         self.pv_remove_btn = QPushButton("− Remove")
+        self.pv_remove_btn.setToolTip(
+            "Remove the selected visual(s) from the rotation.")
         self.pv_remove_btn.clicked.connect(self._pv_remove)
         col.addWidget(self.pv_remove_btn)
         self.pv_up_btn = QPushButton("▲ Move Up")
+        self.pv_up_btn.setToolTip(
+            "Move the selected visual up. List order controls which "
+            "visual each audio file receives (round-robin).")
         self.pv_up_btn.clicked.connect(lambda: self._pv_move(-1))
         col.addWidget(self.pv_up_btn)
         self.pv_down_btn = QPushButton("▼ Move Down")
+        self.pv_down_btn.setToolTip(
+            "Move the selected visual down. List order controls which "
+            "visual each audio file receives (round-robin).")
         self.pv_down_btn.clicked.connect(lambda: self._pv_move(+1))
         col.addWidget(self.pv_down_btn)
         self.pv_reset_btn = QPushButton("🔄 Reset rotation")
@@ -1449,12 +1552,24 @@ class MainWindow(QMainWindow):
         for k, v in CODEC_LABELS.items():
             self.out_codec.addItem(v, userData=k)
         self.out_codec.setCurrentText(CODEC_LABELS[CODEC_H264])
+        self.out_codec.setToolTip(
+            "Video codec of the output:\n"
+            "  H.264 (AVC)  : plays everywhere (default)\n"
+            "  H.265 (HEVC) : ~30% smaller files, wide modern support\n"
+            "  AV1          : best compression; encoding is fast only "
+            "on recent GPUs")
         self.out_codec.currentIndexChanged.connect(self._refresh_encoder_combo)
         g.addWidget(QLabel("Codec:"), r, 0)
         g.addWidget(self.out_codec, r, 1)
         r += 1
 
         self.out_encoder = QComboBox()
+        self.out_encoder.setToolTip(
+            "Encoder used for the chosen codec. 'Auto' picks the best "
+            "one detected on this PC (GPU first, CPU fallback). GPU "
+            "encoders (NVENC / QSV / AMF) are much faster; libx264 / "
+            "libx265 / SVT-AV1 run on the CPU. Only encoders that "
+            "probed working on this machine are listed.")
         g.addWidget(QLabel("Encoder:"), r, 0)
         g.addWidget(self.out_encoder, r, 1)
         r += 1
@@ -1529,6 +1644,11 @@ class MainWindow(QMainWindow):
         self.out_res = QComboBox()
         self.out_res.addItems(list(RESOLUTIONS.keys()))
         self.out_res.setCurrentText("4K (3840x2160)")
+        self.out_res.setToolTip(
+            "Output resolution. Sources are scaled to fit (aspect ratio "
+            "preserved). 'Match Source' keeps each file's original "
+            "size. Higher resolutions increase file size and encode "
+            "time.")
         g.addWidget(QLabel("Resolution:"), r, 0)
         g.addWidget(self.out_res, r, 1)
         r += 1
@@ -1536,6 +1656,10 @@ class MainWindow(QMainWindow):
         self.parallel_jobs = QSpinBox()
         self.parallel_jobs.setRange(1, 2); self.parallel_jobs.setValue(1)
         self.parallel_jobs.setSuffix("  job(s)")
+        self.parallel_jobs.setToolTip(
+            "How many queue items encode at the same time (1-2). GPU "
+            "encoders usually gain nothing beyond 1 — leave at 1 unless "
+            "encoding on CPU.")
         g.addWidget(QLabel("Parallel encoding:"), r, 0)
         g.addWidget(self.parallel_jobs, r, 1)
         r += 1
@@ -1689,10 +1813,15 @@ class MainWindow(QMainWindow):
         self.intro_path = QLineEdit()
         self.intro_path.setPlaceholderText("(no intro)")
         self.intro_path.setReadOnly(True)
+        self.intro_path.setToolTip(
+            "Clip played before the main content. It is re-encoded to "
+            "match the output settings, so any format works.")
         intro_browse = QPushButton("📂 Browse...")
+        intro_browse.setToolTip("Choose an intro clip.")
         intro_browse.clicked.connect(lambda: self._pick_merge_file(
             self.intro_path, "Select intro video"))
         intro_clear = QPushButton("✕ Clear")
+        intro_clear.setToolTip("Remove the intro clip.")
         intro_clear.clicked.connect(lambda: self.intro_path.setText(""))
         intro_row = QHBoxLayout()
         intro_row.addWidget(self.intro_path, 1)
@@ -1705,10 +1834,15 @@ class MainWindow(QMainWindow):
         self.outro_path = QLineEdit()
         self.outro_path.setPlaceholderText("(no outro)")
         self.outro_path.setReadOnly(True)
+        self.outro_path.setToolTip(
+            "Clip played after the main content. It is re-encoded to "
+            "match the output settings, so any format works.")
         outro_browse = QPushButton("📂 Browse...")
+        outro_browse.setToolTip("Choose an outro clip.")
         outro_browse.clicked.connect(lambda: self._pick_merge_file(
             self.outro_path, "Select outro video"))
         outro_clear = QPushButton("✕ Clear")
+        outro_clear.setToolTip("Remove the outro clip.")
         outro_clear.clicked.connect(lambda: self.outro_path.setText(""))
         outro_row = QHBoxLayout()
         outro_row.addWidget(self.outro_path, 1)
@@ -1788,6 +1922,8 @@ class MainWindow(QMainWindow):
         self.status_lbl.setMinimumWidth(220)
         self.total_eta_lbl = QLabel("")
         self.total_eta_lbl.setProperty("role", "muted")
+        self.total_eta_lbl.setToolTip(
+            "Estimated time remaining for the whole batch.")
         self.total_eta_lbl.setMinimumWidth(280)
         self.total_eta_lbl.setAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -1975,41 +2111,63 @@ class MainWindow(QMainWindow):
         mb = self.menuBar()
 
         # --- Tools menu (dialogs that operate on the app / queue) ---
+        # Tooltip audit: QMenu does NOT show QAction tooltips unless
+        # setToolTipsVisible(True) — same for Help / Appearance below.
         tools = mb.addMenu("Tools")
-        for label, slot in [
-            ("Watch Folder…", self._open_watch_dialog),
-            ("Manage Saved Data…", self._open_manage_data_dialog),
-            ("Open Log Folder", self._open_log_folder),
+        tools.setToolTipsVisible(True)
+        for label, slot, tip in [
+            ("Watch Folder…", self._open_watch_dialog,
+             "Automatically add files that appear in a chosen folder "
+             "to the queue."),
+            ("Manage Saved Data…", self._open_manage_data_dialog,
+             "View and clear saved profiles, settings, and app data."),
+            ("Open Log Folder", self._open_log_folder,
+             "Open the folder containing Veloxa's log files."),
             # V14.4.1: force a fresh GPU-encoder probe.
             ("Re-detect GPU encoders…",
-             self._redetect_gpu_encoders),
+             self._redetect_gpu_encoders,
+             "Clear the cached probe and re-detect which hardware "
+             "encoders work on this PC (use after a driver update)."),
             # V14.5.0: opt-in crash reporter. "Report a problem" lets the
             # user file a GitHub Issue manually with the current log;
             # "Crash reporting settings" lets them toggle the opt-in.
             ("Report a problem…",
-             self._report_a_problem_manual),
+             self._report_a_problem_manual,
+             "Open a pre-filled GitHub issue report in your browser, "
+             "with the current log attached."),
             ("Crash reporting settings…",
-             self._crash_reporting_settings),
+             self._crash_reporting_settings,
+             "Choose whether crash reports may be offered for sending "
+             "after an error."),
         ]:
             act = QAction(label, self)
             act.setMenuRole(QAction.MenuRole.NoRole)
+            act.setToolTip(tip)
             act.triggered.connect(slot)
             tools.addAction(act)
 
         # --- Help menu (docs + update check) ---
         help_menu = mb.addMenu("Help")
-        for label, slot in [
-            ("README", self._show_readme),
-            ("Installation Guide", self._show_install_guide),
-            ("User Guide", self._show_help),
-            ("License", self._show_license),
+        help_menu.setToolTipsVisible(True)
+        for label, slot, tip in [
+            ("README", self._show_readme,
+             "Overview of the app and its features."),
+            ("Installation Guide", self._show_install_guide,
+             "How to install, update, and uninstall on Windows and "
+             "macOS."),
+            ("User Guide", self._show_help,
+             "Detailed help for every feature (F1)."),
+            ("License", self._show_license,
+             "View the software license."),
             # V14.8.0: lets the user re-run the first-launch tour any
             # time — useful when they brushed it off the first time
             # without reading.
-            ("Show Onboarding Tour", self._run_onboarding_tour),
+            ("Show Onboarding Tour", self._run_onboarding_tour,
+             "Replay the three-step introduction tour."),
         ]:
             act = QAction(label, self)
             act.setMenuRole(QAction.MenuRole.NoRole)
+            act.setToolTip(tip)
             act.triggered.connect(slot)
             help_menu.addAction(act)
         help_menu.addSeparator()
@@ -2019,6 +2177,9 @@ class MainWindow(QMainWindow):
         # platforms now.
         check_updates_act = QAction("Check for Updates…", self)
         check_updates_act.setMenuRole(QAction.MenuRole.NoRole)
+        check_updates_act.setToolTip(
+            "Check GitHub for a newer version and install it from "
+            "inside the app.")
         check_updates_act.triggered.connect(self._check_for_updates_manual)
         help_menu.addAction(check_updates_act)
 
@@ -2028,19 +2189,27 @@ class MainWindow(QMainWindow):
         # radio items. Default reads from QSettings (falls back to
         # "system" when no choice has been persisted yet).
         appearance = mb.addMenu("Appearance")
+        appearance.setToolTipsVisible(True)
         self._theme_group = QActionGroup(self)
         self._theme_group.setExclusive(True)
         current_mode = self.settings.value("theme_mode", THEME_SYSTEM)
         if current_mode not in THEME_MODES:
             current_mode = THEME_SYSTEM
-        for mode, label in [
-            (THEME_SYSTEM, "System (follow OS)"),
-            (THEME_LIGHT,  "Light"),
-            (THEME_DARK,   "Dark"),
-            (THEME_OLED,   "OLED Dark (pure black)"),
+        for mode, label, tip in [
+            (THEME_SYSTEM, "System (follow OS)",
+             "Match the operating system's light / dark preference "
+             "automatically."),
+            (THEME_LIGHT,  "Light",
+             "Always use the light theme."),
+            (THEME_DARK,   "Dark",
+             "Always use the dark theme."),
+            (THEME_OLED,   "OLED Dark (pure black)",
+             "Dark theme with a pure-black background — saves power "
+             "on OLED displays."),
         ]:
             act = QAction(label, self, checkable=True)
             act.setMenuRole(QAction.MenuRole.NoRole)
+            act.setToolTip(tip)
             act.setData(mode)
             act.setChecked(mode == current_mode)
             act.triggered.connect(
@@ -2851,6 +3020,7 @@ class MainWindow(QMainWindow):
         buttons.accepted.connect(dlg.accept)
         buttons.rejected.connect(dlg.reject)
         v.addWidget(buttons)
+        mirror_tooltips_to_accessibility(dlg)
 
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return None, False
