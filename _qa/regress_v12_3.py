@@ -618,7 +618,7 @@ from app.updater import (
 )
 
 # Version is correctly bumped.
-check("APP_VERSION = '14.11.0'", _APP_VERSION == "14.11.0",
+check("APP_VERSION = '14.11.1'", _APP_VERSION == "14.11.1",
       f"got {_APP_VERSION!r}")
 check("GITHUB_REPO is khurram5509/Veloxa-Video-Editor",
       _u.GITHUB_REPO == "khurram5509/Veloxa-Video-Editor",
@@ -734,14 +734,14 @@ check("docs.py advertises auto-update feature",
 
 # Installer.iss + build.ps1 carry the new version.
 iss_src = open(ROOT / "installer.iss", encoding="utf-8").read()
-check("installer.iss AppVersion = 14.11.0", '"14.11.0"' in iss_src)
-check("installer.iss EXE name = V14.11.0.exe",
-      "Veloxa-Video-Editor-V14.11.0.exe" in iss_src)
+check("installer.iss AppVersion = 14.11.1", '"14.11.1"' in iss_src)
+check("installer.iss EXE name = V14.11.1.exe",
+      "Veloxa-Video-Editor-V14.11.1.exe" in iss_src)
 check("installer.iss preserves stable AppId across V12 -> V13",
       "F2E1A8C4-1E5B-4C9A-9B27-VELOXA-VID-V121" in iss_src)
 ps1_src = open(ROOT / "build.ps1", encoding="utf-8").read()
-check("build.ps1 builds V14.11.0 EXE",
-      "Veloxa-Video-Editor-V14.11.0" in ps1_src)
+check("build.ps1 builds V14.11.1 EXE",
+      "Veloxa-Video-Editor-V14.11.1" in ps1_src)
 
 # V14.8.1 crash-fix: stale C++-object guard in _start_update_check.
 mw_src2 = open(ROOT / "app" / "main_window.py", encoding="utf-8").read()
@@ -1102,7 +1102,10 @@ check("Legacy _pick_windows_asset still selects .exe assets",
       _pick_windows_asset(mac_assets)["name"].endswith(".exe"))
 
 # updater.check_for_updates now uses pick_release_asset (delegated).
-_check_for_updates_src = inspect.getsource(_u.check_for_updates)
+# V14.11.1: the implementation moved into check_for_updates_detailed
+# (check_for_updates is now a thin backward-compatible wrapper), so the
+# asset logic lives there.
+_check_for_updates_src = inspect.getsource(_u.check_for_updates_detailed)
 check("check_for_updates uses pick_release_asset (platform-aware)",
       "pick_release_asset" in _check_for_updates_src)
 
@@ -1384,7 +1387,7 @@ finally:
 # Log message in check_for_updates is platform-agnostic (was "no .exe
 # asset" which read as a Windows-specific failure on macOS). Comments
 # (which keep the historical text) are stripped first.
-_u_src_143 = inspect.getsource(_u.check_for_updates)
+_u_src_143 = inspect.getsource(_u.check_for_updates_detailed)
 _u_code_only = "\n".join(
     ln for ln in _u_src_143.splitlines()
     if not ln.lstrip().startswith("#"))

@@ -173,7 +173,9 @@ print()
 print("[5] check_for_updates uses pick_release_asset internally")
 import inspect
 from app import updater as _u
-src = inspect.getsource(_u.check_for_updates)
+# V14.11.1: the body moved into check_for_updates_detailed; the old
+# name is now a thin wrapper that delegates to it.
+src = inspect.getsource(_u.check_for_updates_detailed)
 check("check_for_updates imports pick_release_asset",
       "pick_release_asset" in src)
 # The asset-selection logic must NOT contain a hardcoded ``.exe``

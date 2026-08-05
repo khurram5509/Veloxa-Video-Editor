@@ -38,6 +38,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -53,7 +54,7 @@ log = logging.getLogger("veloxa.updater")
 # Single source of truth for the application version. Imported by
 # ``app/docs.py``, ``app/main_window.py`` title bar, and the regression
 # tests. Bump this when cutting a new release.
-APP_VERSION = "14.11.0"
+APP_VERSION = "14.11.1"
 
 # GitHub repo to poll for releases. Format: ``owner/repo`` (no leading
 # slash, no trailing slash). Set to ``""`` to disable update checks
@@ -160,18 +161,73 @@ def _pick_windows_asset(assets: list) -> Optional[dict]:
     return None
 
 
+def _describe_http_error(exc) -> str:
+    """Turn an HTTPError from the releases API into something a user can
+    act on. GitHub's unauthenticated limit is 60 requests/hour per IP,
+    and it answers 403 (or 429) with ``X-RateLimit-Remaining: 0`` --
+    common on shared / office IPs, and the single most likely reason a
+    check fails on an otherwise healthy connection."""
+    code = getattr(exc, "code", 0)
+    headers = getattr(exc, "headers", None) or {}
+    try:
+        remaining = int(headers.get("X-RateLimit-Remaining", "") or -1)
+    except (TypeError, ValueError):
+        remaining = -1
+    if code in (403, 429) and remaining == 0:
+        when = ""
+        try:
+            reset = int(headers.get("X-RateLimit-Reset", "") or 0)
+            if reset:
+                when = (" Try again after "
+                        + time.strftime("%H:%M", time.localtime(reset))
+                        + ".")
+        except (TypeError, ValueError):
+            pass
+        return ("GitHub's hourly API limit was reached for your network, "
+                "so Veloxa couldn't check for a new version." + when)
+    if code == 403:
+        return ("GitHub refused the update check (HTTP 403). This is "
+                "usually a rate limit or a network policy.")
+    if code == 404:
+        return ("The update repository was not found (HTTP 404). It may "
+                "have been renamed or made private.")
+    return f"GitHub returned HTTP {code} for the update check."
+
+
 def check_for_updates(github_repo: str = GITHUB_REPO,
                       local_version: str = APP_VERSION,
                       timeout: float = HTTP_TIMEOUT_S
                       ) -> Optional[UpdateInfo]:
-    """Query GitHub for the latest release of ``github_repo``. Returns
-    an :class:`UpdateInfo` iff that release is strictly newer than
-    ``local_version``. Returns ``None`` for every error condition
-    (network unreachable, 404, rate-limit, malformed JSON, no Windows
-    asset, repo not configured...). Never raises.
+    """Backward-compatible wrapper: returns the :class:`UpdateInfo` when a
+    newer release exists, else ``None``. Callers that need to tell "you're
+    up to date" apart from "the check failed" must use
+    :func:`check_for_updates_detailed` instead."""
+    info, _err = check_for_updates_detailed(
+        github_repo=github_repo, local_version=local_version,
+        timeout=timeout)
+    return info
+
+
+def check_for_updates_detailed(github_repo: str = GITHUB_REPO,
+                               local_version: str = APP_VERSION,
+                               timeout: float = HTTP_TIMEOUT_S
+                               ) -> tuple:
+    """Query GitHub for the latest release of ``github_repo``.
+
+    Returns ``(info, error)``:
+      * ``(UpdateInfo, "")``  -- a strictly newer release is available
+      * ``(None, "")``        -- checked successfully, already current
+      * ``(None, "<reason>")``-- the check itself FAILED (offline, rate
+                                 limited, 404, malformed JSON...)
+
+    V14.11.1: the old API collapsed "up to date" and "check failed" into
+    a bare ``None``, so a rate-limited or offline check was reported to
+    the user as "You're up to date." -- actively misleading, since a
+    genuinely available update stayed invisible. The error string lets
+    the UI say what actually happened. Never raises.
     """
     if not github_repo or "/" not in github_repo:
-        return None
+        return None, "No update repository is configured in this build."
     url = f"https://api.github.com/repos/{github_repo}/releases/latest"
     req = urllib.request.Request(
         url,
@@ -183,25 +239,29 @@ def check_for_updates(github_repo: str = GITHUB_REPO,
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             raw = resp.read()
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError,
-            OSError) as exc:
-        log.info("Update check: API unreachable: %s", exc)
-        return None
+    except urllib.error.HTTPError as exc:
+        reason = _describe_http_error(exc)
+        log.info("Update check failed: %s", reason)
+        return None, reason
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        log.info("Update check failed: API unreachable: %s", exc)
+        return None, ("Could not reach GitHub. Check your internet "
+                      "connection, VPN, or firewall.")
     try:
         data = json.loads(raw.decode("utf-8", errors="replace"))
     except (ValueError, UnicodeDecodeError) as exc:
         log.warning("Update check: malformed JSON: %s", exc)
-        return None
+        return None, "GitHub returned a response Veloxa couldn't read."
     if not isinstance(data, dict):
-        return None
+        return None, "GitHub returned an unexpected response."
     tag = (data.get("tag_name") or "").strip()
     if not tag:
-        return None
+        return None, "GitHub returned a release with no version tag."
     # Strip a leading 'v' / 'V' for display, but keep the raw tag for the
     # asset URL.
     display_version = tag.lstrip("vV")
     if not is_newer(display_version, local_version):
-        return None
+        return None, ""            # checked OK, genuinely up to date
     # V14.2.0: pick platform-appropriate asset (.exe on Windows,
     # .dmg on macOS, .AppImage on Linux). The legacy
     # _pick_windows_asset is kept for the regression suite + as the
@@ -214,7 +274,8 @@ def check_for_updates(github_repo: str = GITHUB_REPO,
         # macOS (where the picker is looking for a .dmg).
         log.info("Update check: release %s has no installer asset "
                  "for this platform", tag)
-        return None
+        return None, (f"Release {tag} is available but has no installer "
+                      "for this platform yet. Try the release page.")
     return UpdateInfo(
         version=display_version,
         tag=tag,
@@ -224,7 +285,7 @@ def check_for_updates(github_repo: str = GITHUB_REPO,
         asset_url=(asset.get("browser_download_url") or ""),
         asset_name=(asset.get("name") or "VeloxaVideoEditor-Setup.exe"),
         asset_size=int(asset.get("size") or 0),
-    )
+    ), ""
 
 
 # ---------------------------------------------------------------- Qt thread
@@ -234,9 +295,13 @@ class UpdateChecker(QThread):
 
     # found_update(info, manual_trigger)
     found_update = pyqtSignal(object, bool)
-    # no_update(manual_trigger) — emitted both on "you're up to date" AND
-    # on "API unreachable" so a manual click always gets feedback.
+    # no_update(manual_trigger) — the check SUCCEEDED and this build is
+    # already current. V14.11.1: failures no longer come through here.
     no_update = pyqtSignal(bool)
+    # check_failed(reason, manual_trigger) — the check itself could not
+    # complete (offline, rate limited, 404...). Previously these were
+    # reported to the user as "You're up to date", hiding real updates.
+    check_failed = pyqtSignal(str, bool)
 
     def __init__(self, *, github_repo: str = GITHUB_REPO,
                  local_version: str = APP_VERSION,
@@ -248,12 +313,14 @@ class UpdateChecker(QThread):
         self._manual = manual
 
     def run(self):
-        info = check_for_updates(
+        info, error = check_for_updates_detailed(
             github_repo=self._github_repo,
             local_version=self._local_version,
         )
         if info:
             self.found_update.emit(info, self._manual)
+        elif error:
+            self.check_failed.emit(error, self._manual)
         else:
             self.no_update.emit(self._manual)
 

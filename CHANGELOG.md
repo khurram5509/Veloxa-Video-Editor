@@ -1,3 +1,38 @@
+# Veloxa Video Editor — V14.11.1
+
+**Bug fix (reported from the field).** A failed update check was being reported as **"You're up to date."** — hiding real updates.
+
+## What went wrong
+
+A V14.10.0 install showed *"You're up to date. No newer release found at GitHub."* while V14.11.0 was live on the releases page.
+
+**Root cause:** `check_for_updates()` returned a bare `None` for **two completely different outcomes** — "checked successfully, you're already current" *and* every failure mode (offline, rate limited, HTTP 404, malformed response). The UI rendered that single `None` as success, so any failed check looked exactly like good news.
+
+In this case the trigger was GitHub's **unauthenticated API rate limit** (60 requests/hour per IP — easy to hit on a shared or office network). The check got HTTP 403, silently gave up, and the app claimed it was current.
+
+The dialog even carried a disclaimer admitting this ("*if the check failed silently… this message looks the same as 'up to date'*"). That was a band-aid over a real defect, not a fix.
+
+## The fix
+
+Update checks now have **three** distinct outcomes instead of two:
+
+| Outcome | What you see |
+|---|---|
+| Newer release available | The usual update dialog |
+| Checked OK, already current | "You're up to date." (now genuinely means it) |
+| **Check failed** | **New:** "Couldn't check for updates," with the actual reason |
+
+The failure dialog names the cause in plain language — rate limit (including when it resets), no connection, repo not found, unreadable response — and explicitly states that this is **not** a clean bill of health. It offers **Retry** and **Open Release Page**. Startup auto-checks stay silent but now report the reason in the status bar instead of implying everything is current.
+
+The misleading disclaimer is gone, because the message it warned about can no longer appear.
+
+## Tests
+
+- New suite `_qa/v1411_update_check_failure.py` (22 checks) covering rate-limit / offline / 404 / malformed-JSON / no-asset classification, the exact `14.10.0 → 14.11.0` field regression, and the end-to-end failure wiring.
+- 730 automated checks across 13 suites, all passing.
+
+---
+
 # Veloxa Video Editor — V14.11.0
 
 **Feature.** Save Progress — save your whole session as a named draft at any point, with optional auto-save, and resume / edit / start / delete drafts later.

@@ -2521,6 +2521,7 @@ class MainWindow(QMainWindow):
         )
         c.found_update.connect(self._on_update_found)
         c.no_update.connect(self._on_no_update)
+        c.check_failed.connect(self._on_update_check_failed)
         # Order matters: clear the Python ref BEFORE asking Qt to delete
         # the C++ object, so any future _start_update_check call sees
         # ``self._update_checker is None`` and creates a fresh thread
@@ -2553,10 +2554,11 @@ class MainWindow(QMainWindow):
             f"Current version: <b>V{VELOXA_APP_VERSION}</b><br>"
             f"No newer release found at GitHub.<br><br>"
             f"Release page (all versions): <br>"
-            f"<a href='{releases_url}'>{releases_url}</a><br><br>"
-            f"<i>(If the check failed silently — offline, rate-limited, "
-            f"private repo — this message looks the same as 'up to "
-            f"date'. The Open Log Folder menu has the details.)</i>")
+            f"<a href='{releases_url}'>{releases_url}</a>")
+        # V14.11.1: the old "(if the check failed silently this looks the
+        # same)" disclaimer is gone — failures now get their own dialog
+        # via _on_update_check_failed, so this message means exactly what
+        # it says: the check completed and you are current.
         ok_btn = msg.addButton(QMessageBox.StandardButton.Ok)
         open_btn = msg.addButton(
             "Open Release Page", QMessageBox.ButtonRole.AcceptRole)
@@ -2564,6 +2566,43 @@ class MainWindow(QMainWindow):
         msg.exec()
         if msg.clickedButton() is open_btn:
             self._open_url_in_browser(releases_url)
+        self.status_lbl.setText("")
+
+    def _on_update_check_failed(self, reason: str, manual: bool):
+        """V14.11.1: the update check could not complete. Previously this
+        path emitted ``no_update`` and the user was told "You're up to
+        date." — so a rate-limited or offline check hid a real update.
+        """
+        log.info("Update check failed (manual=%s): %s", manual, reason)
+        if not manual:
+            # Auto-check stays silent, but says so in the status bar
+            # rather than implying everything is current.
+            self.status_lbl.setText("Update check unavailable — " + reason)
+            return
+        releases_url = f"https://github.com/{VELOXA_GITHUB_REPO}/releases"
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Icon.Warning)
+        msg.setWindowTitle("Veloxa Video Editor")
+        msg.setTextFormat(Qt.TextFormat.RichText)
+        msg.setText(
+            f"<b>Couldn't check for updates.</b><br><br>"
+            f"{reason}<br><br>"
+            f"Your version: <b>V{VELOXA_APP_VERSION}</b> — this does "
+            f"<i>not</i> mean you're up to date; Veloxa simply could not "
+            f"ask GitHub. You can check the release page yourself:<br>"
+            f"<a href='{releases_url}'>{releases_url}</a>")
+        retry_btn = msg.addButton(
+            "Retry", QMessageBox.ButtonRole.AcceptRole)
+        open_btn = msg.addButton(
+            "Open Release Page", QMessageBox.ButtonRole.AcceptRole)
+        close_btn = msg.addButton(QMessageBox.StandardButton.Close)
+        msg.setDefaultButton(retry_btn)
+        msg.exec()
+        clicked = msg.clickedButton()
+        if clicked is open_btn:
+            self._open_url_in_browser(releases_url)
+        elif clicked is retry_btn:
+            self._check_for_updates_manual()
         self.status_lbl.setText("")
 
     # ============================================================ V14.8.0 helpers
