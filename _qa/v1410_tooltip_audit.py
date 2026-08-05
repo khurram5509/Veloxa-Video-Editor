@@ -25,6 +25,15 @@ _app = QApplication.instance() or QApplication(sys.argv)
 
 from app.main_window import MainWindow
 from app.dialogs import mirror_tooltips_to_accessibility  # noqa: F401
+from app.persistence import queue_state_path, clear_queue_state
+
+# Snapshot + clear the queue-state file BEFORE constructing MainWindow:
+# __init__ calls _maybe_restore_queue(), which pops a MODAL "Resume
+# previous batch?" dialog whenever a previous queue exists -- offscreen
+# that blocks forever. Restored byte-for-byte at the end of the run.
+_qpath = queue_state_path()
+_qbackup = _qpath.read_text(encoding="utf-8") if _qpath.exists() else None
+clear_queue_state()
 
 PASS, FAIL = [], []
 def check(name, ok, detail=""):
@@ -114,6 +123,12 @@ check("MainWindow mirrors its own tree at startup",
       "mirror_tooltips_to_accessibility(self)" in mw_src)
 
 mw.deleteLater()
+
+# Restore the user's real queue state exactly as we found it.
+if _qbackup is None:
+    clear_queue_state()
+else:
+    _qpath.write_text(_qbackup, encoding="utf-8")
 
 print()
 print("=" * 72)

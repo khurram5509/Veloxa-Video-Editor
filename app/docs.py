@@ -26,6 +26,7 @@ the queue survives app restarts and crashes.</p>
 
 <h2>Features at a glance</h2>
 <ul>
+  <li><b>Save Progress &amp; drafts (V14.11.0)</b> &mdash; save your whole session (every queue row with its profile and done/pending status, plus all Trim / Watermark / Audio Visuals / Output settings) as a named draft at any point &mdash; before starting or part-way through a batch. <b>Save Progress</b> (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>) saves; <b>Drafts…</b> (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd>) lets you resume, start, rename, or delete saved drafts. Optional auto-save keeps a draft current after every queue change and every completed video.</li>
   <li><b>Profile shortcut numbers (V14.10.0)</b> — every profile carries a sticky number (shown as <code>3. MyProfile</code> in every dropdown). Select queue rows and type the number to assign that profile to all of them — multi-digit numbers work (type <code>1</code>&nbsp;<code>2</code> for profile 12; single digits apply instantly when no longer number could match, otherwise after a ~0.7 s pause). Reassign numbers via <i>Profile Manager → Set Number</i> (swaps with the current holder on conflict). Numbers survive renames and profile updates; duplicates and imports never steal an existing number.</li>
   <li><b>Add from Folder multi-format picker (V14.9.0)</b> — when the recursive scan finds more than one file extension in the chosen folder, a picker dialog lists each unique extension (checkbox per extension, all ticked by default). Only ticked extensions get imported. Optional second checkbox permanently deletes every non-chosen file in the folder tree — with an explicit second confirmation dialog showing the exact count + sample paths before anything is removed.</li>
   <li><b>Updater stall detection + Download in Browser (V14.8.0)</b> — the in-app installer download now has a 15 s per-read timeout and a 30 s zero-bytes inactivity detector, so it fails fast with a clear dialog instead of hanging forever behind an aggressive AV or CDN. The update-available dialog gained a fourth <i>Download in Browser</i> button that skips the in-app downloader entirely.</li>
@@ -309,6 +310,42 @@ supported. Reassign a number with <b>Set Number</b> in the Profile Manager
 &mdash; if the number is taken, the two profiles swap. Numbers survive
 renames and updates; duplicates and imports get fresh numbers instead of
 stealing existing ones.</p>
+
+<h2>Save Progress &amp; drafts (V14.11.0)</h2>
+<p>A <b>draft</b> is a snapshot of your whole work session: every queue row
+(with its assigned profile and its done / pending status) plus the complete
+settings state &mdash; Trim, Watermark, Audio Visuals, and Output. Drafts let
+you stop at any point and pick up later on exactly the same setup.</p>
+<ul>
+  <li><b>💾 Save Progress</b> (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>)
+      &mdash; saves the current session. If a draft is already open it
+      updates that draft; otherwise it asks for a name. Works before you
+      start a batch and at any stage during one.</li>
+  <li><b>🗂 Drafts…</b> (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd>, or
+      <i>Tools → Saved Drafts…</i>) &mdash; the drafts manager, listing every
+      saved draft with its item count, how many are done, and when it was
+      last saved. From here you can:
+    <ul>
+      <li><b>Open</b> &mdash; resume a draft into the main window (queue and
+          settings) so you can keep editing it.</li>
+      <li><b>Open &amp; Start</b> &mdash; resume it and immediately start
+          encoding. Rows already marked done are not re-encoded.</li>
+      <li><b>Rename</b>, <b>Delete</b>, and <b>Save Current as New Draft</b>.</li>
+    </ul>
+  </li>
+  <li><b>Auto-save</b> &mdash; the checkbox in the drafts manager. When on,
+      progress is saved automatically after <i>every</i> queue change and
+      after <i>every</i> completed video. It updates the draft you have open,
+      or maintains a rolling <b>Autosave</b> entry when no draft is open.
+      Turn it off to save only when you click Save Progress.</li>
+  <li><b>Last session</b> &mdash; the crash-recovery queue also appears in the
+      drafts list, so an interrupted batch is always recoverable from here
+      even if you dismissed the startup prompt.</li>
+</ul>
+<p>The label beside the Save Progress button shows which draft is currently
+open (or <i>(none)</i>). Deleting a draft never touches your video files on
+disk. If a draft's source files have moved or been deleted, opening it warns
+you and marks how many are missing.</p>
 
 <h2>Queue management</h2>
 <ul>

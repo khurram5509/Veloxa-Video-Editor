@@ -12,6 +12,7 @@ import re
 import sys
 import tempfile
 import time
+from datetime import datetime
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QSettings, QSize, QThread, QTimer, pyqtSignal
@@ -112,7 +113,8 @@ from . import widgets as widgets_mod
 from .widgets import TrimSeekBar, DropList, QueueItemData
 from .dialogs import (
     ProfileManagerDialog, WatchFolderDialog, ManageSavedDataDialog,
-    show_info_dialog, NO_PROFILE, mirror_tooltips_to_accessibility,
+    DraftsDialog, show_info_dialog, NO_PROFILE,
+    mirror_tooltips_to_accessibility,
 )
 from .watch_folder import FolderWatcher
 from .docs import README_HTML, INSTALL_HTML, HELP_HTML, LICENSE_HTML
@@ -120,6 +122,7 @@ from .persistence import (
     save_queue_state, load_queue_state, clear_queue_state, log_dir,
     import_watermark_image,
 )
+from . import drafts as drafts_store
 from .profile_assets import (
     copy_assets_into_profile, delete_profile_assets,
 )
@@ -243,6 +246,15 @@ class MainWindow(QMainWindow):
         self._suppress_change = False
         self._text_color = "#ffffff"
         self._queue_locked = False
+        # V14.11.0 Save Progress: id/name of the draft currently open
+        # ("" = none). Auto-save updates the open draft in place; with
+        # no draft open it writes the rolling `autosave` slot instead.
+        # `_suppress_autosave` guards the window-rebuild that happens
+        # while a draft is being loaded, so restoring a draft can't
+        # immediately overwrite the one being restored.
+        self._current_draft_id = ""
+        self._current_draft_name = ""
+        self._suppress_autosave = False
         # Total-batch ETA tracking: monotonic start time + count of finished
         # jobs (success or fail, but not retrying). avg_per_job * remaining
         # gives the estimate.
@@ -490,6 +502,30 @@ class MainWindow(QMainWindow):
         row.addStretch()
         row.addWidget(hint, 1)
         v.addLayout(row)
+
+        # V14.11.0 Save Progress: save the whole session (queue +
+        # settings) at any point, before starting or mid-way through.
+        draft_row = QHBoxLayout()
+        self.save_progress_btn = QPushButton("💾 Save Progress")
+        self.save_progress_btn.setToolTip(
+            "Save the current queue and all settings as a draft you can "
+            "resume later (Ctrl+Shift+P). Updates the open draft, or "
+            "asks for a name when none is open. Works before starting "
+            "and at any point during a batch.")
+        self.save_progress_btn.clicked.connect(
+            lambda: self.save_progress())
+        self.drafts_btn = QPushButton("🗂 Drafts...")
+        self.drafts_btn.setToolTip(
+            "Open, resume, start, rename, or delete saved drafts, and "
+            "turn auto-save on or off (Ctrl+Shift+D).")
+        self.drafts_btn.clicked.connect(self.open_drafts_manager)
+        self.draft_lbl = QLabel("Draft: (none)")
+        self.draft_lbl.setProperty("role", "muted")
+        draft_row.addWidget(self.save_progress_btn)
+        draft_row.addWidget(self.drafts_btn)
+        draft_row.addWidget(self.draft_lbl, 1)
+        v.addLayout(draft_row)
+        self._refresh_draft_indicator()
         return box
 
     def _set_queue_locked(self, locked: bool):
@@ -2097,6 +2133,9 @@ class MainWindow(QMainWindow):
         sc("Ctrl+Shift+S", self._save_as_profile)
         sc("Ctrl+M", self._open_profile_manager)
         sc("F1", self._show_help)
+        # V14.11.0 Save Progress.
+        sc("Ctrl+Shift+P", lambda: self.save_progress())
+        sc("Ctrl+Shift+D", self.open_drafts_manager)
         # Delete key removes selection from the queue when it has focus.
         del_sc = QShortcut(QKeySequence(Qt.Key.Key_Delete), self.file_list)
         del_sc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
@@ -2207,6 +2246,12 @@ class MainWindow(QMainWindow):
         tools = mb.addMenu("Tools")
         tools.setToolTipsVisible(True)
         for label, slot, tip in [
+            ("Saved Drafts…", self.open_drafts_manager,
+             "Open, resume, start, rename, or delete saved drafts, and "
+             "turn auto-save on or off (Ctrl+Shift+D)."),
+            ("Save Progress", lambda: self.save_progress(),
+             "Save the current queue and settings as a draft "
+             "(Ctrl+Shift+P)."),
             ("Watch Folder…", self._open_watch_dialog,
              "Automatically add files that appear in a chosen folder "
              "to the queue."),
@@ -6017,6 +6062,206 @@ class MainWindow(QMainWindow):
             if d:
                 items.append(d.to_dict())
         save_queue_state(items)
+        # V14.11.0: every queue mutation AND every completed video funnels
+        # through here, so this single call covers both auto-save triggers.
+        self._autosave_progress()
+
+    # ================================================ V14.11.0 Save Progress
+
+    def _collect_queue_items(self) -> list:
+        out = []
+        for i in range(self.file_list.count()):
+            d = self._item_data(self.file_list.item(i))
+            if d:
+                out.append(d.to_dict())
+        return out
+
+    def is_autosave_enabled(self) -> bool:
+        v = self.settings.value("autosave_progress", True)
+        # QSettings round-trips booleans as the strings "true"/"false"
+        # on some platforms -- normalise both forms.
+        if isinstance(v, str):
+            return v.lower() not in ("false", "0", "no")
+        return bool(v)
+
+    def set_autosave_enabled(self, on: bool):
+        self.settings.setValue("autosave_progress", bool(on))
+
+    def _autosave_progress(self):
+        """Auto-save after each activity / completed video, when enabled.
+        Updates the open draft in place; with no draft open, maintains the
+        rolling `autosave` slot. Never raises -- a failed auto-save must
+        not interrupt an encode."""
+        if self._suppress_autosave or not self.is_autosave_enabled():
+            return
+        try:
+            items = self._collect_queue_items()
+            if not items and not self._current_draft_id:
+                # Nothing to remember and no named draft to keep current.
+                return
+            if self._current_draft_id:
+                existing = drafts_store.load_draft(self._current_draft_id)
+                name = (self._current_draft_name
+                        or (existing or {}).get("name", "Untitled draft"))
+                kind = (existing or {}).get("kind", "manual")
+                created = (existing or {}).get("created_at", "")
+                d = drafts_store.make_draft(
+                    name, items, self._collect_settings_dict(),
+                    draft_id=self._current_draft_id, kind=kind)
+                if created:
+                    d["created_at"] = created
+            else:
+                existing = drafts_store.load_draft(drafts_store.AUTOSAVE_ID)
+                d = drafts_store.make_draft(
+                    "Autosave", items, self._collect_settings_dict(),
+                    draft_id=drafts_store.AUTOSAVE_ID, kind="autosave")
+                if existing and existing.get("created_at"):
+                    d["created_at"] = existing["created_at"]
+            drafts_store.save_draft(d)
+        except Exception as e:                     # never break the batch
+            log.warning("Auto-save skipped: %s", e)
+
+    def save_progress(self, *, ask_name: bool = False) -> bool:
+        """Explicit Save Progress. Updates the open draft, or asks for a
+        name when none is open (or when ``ask_name`` forces Save As)."""
+        items = self._collect_queue_items()
+        if not items:
+            QMessageBox.information(
+                self, "Save Progress",
+                "The queue is empty — add files before saving progress.")
+            return False
+        draft_id = self._current_draft_id
+        name = self._current_draft_name
+        if ask_name or not draft_id:
+            suggested = name or f"Draft {datetime.now():%Y-%m-%d %H:%M}"
+            new_name, ok = QInputDialog.getText(
+                self, "Save Progress", "Name this draft:", text=suggested)
+            if not ok:
+                return False
+            new_name = new_name.strip()
+            if not new_name:
+                QMessageBox.information(self, "Save Progress",
+                                        "Name cannot be empty.")
+                return False
+            name, draft_id = new_name, drafts_store.new_draft_id()
+        d = drafts_store.make_draft(
+            name, items, self._collect_settings_dict(),
+            draft_id=draft_id, kind="manual")
+        existing = drafts_store.load_draft(draft_id)
+        if existing and existing.get("created_at"):
+            d["created_at"] = existing["created_at"]
+        if not drafts_store.save_draft(d):
+            QMessageBox.warning(
+                self, "Save Progress",
+                "Could not write the draft file. Check that "
+                f"{drafts_store.drafts_dir()} is writable.")
+            return False
+        self._set_current_draft(draft_id, name)
+        self.status_lbl.setText(
+            f"Progress saved to draft '{name}' ({len(items)} item(s)).")
+        return True
+
+    def _set_current_draft(self, draft_id: str, name: str):
+        self._current_draft_id = draft_id or ""
+        self._current_draft_name = name or ""
+        self._refresh_draft_indicator()
+
+    def _refresh_draft_indicator(self):
+        if not hasattr(self, "draft_lbl"):
+            return
+        if self._current_draft_name:
+            self.draft_lbl.setText(f"Draft: {self._current_draft_name}")
+            self.draft_lbl.setToolTip(
+                f"Save Progress updates the open draft "
+                f"'{self._current_draft_name}'.")
+        else:
+            self.draft_lbl.setText("Draft: (none)")
+            self.draft_lbl.setToolTip(
+                "No draft open — Save Progress will ask for a name.")
+
+    def load_draft_into_window(self, draft_id: str,
+                               *, start_after: bool = False) -> bool:
+        """Restore a draft: queue rows + settings snapshot. Refuses while
+        a batch is running so an in-flight encode can never be yanked out
+        from under the BatchManager."""
+        if self._queue_locked:
+            QMessageBox.information(
+                self, "Open Draft",
+                "Stop or finish the running batch before opening a draft.")
+            return False
+        d = drafts_store.load_draft(draft_id)
+        if d is None:
+            QMessageBox.warning(self, "Open Draft",
+                                "That draft could not be read.")
+            return False
+        items = d.get("items", [])
+        settings = d.get("settings", {})
+        if settings and self.file_list.count() > 0:
+            r = QMessageBox.question(
+                self, "Open Draft",
+                f"Opening '{drafts_store.display_name(d)}' replaces the "
+                f"current queue ({self.file_list.count()} item(s)) and "
+                "applies the draft's saved settings.\n\nContinue?",
+                QMessageBox.StandardButton.Yes
+                | QMessageBox.StandardButton.No)
+            if r != QMessageBox.StandardButton.Yes:
+                return False
+        self._suppress_autosave = True
+        try:
+            if settings:
+                self._apply_settings_dict(settings)
+            self.file_list.clear()
+            restored = 0
+            missing = 0
+            for raw in items:
+                try:
+                    data = QueueItemData.from_dict(raw)
+                except Exception:
+                    continue
+                if not data.src:
+                    continue
+                if not os.path.exists(data.src):
+                    missing += 1
+                item = QListWidgetItem()
+                item.setData(Qt.ItemDataRole.UserRole, data)
+                item.setToolTip(data.src)
+                self._refresh_item_label(item)
+                self.file_list.addItem(item)
+                self._install_row_widget(item)
+                restored += 1
+            if self.file_list.count() > 0:
+                self.file_list.setCurrentRow(0)
+        finally:
+            self._suppress_autosave = False
+        # A reserved slot stays "unopened" so later auto-saves keep
+        # flowing to the rolling slot instead of pinning to it.
+        if draft_id in drafts_store.RESERVED_IDS:
+            self._set_current_draft("", "")
+        else:
+            self._set_current_draft(draft_id, d.get("name", ""))
+        self._refresh_queue_stats()
+        self._save_queue_state()
+        self._update_preview_info()
+        note = f"Opened draft: {drafts_store.display_name(d)} " \
+               f"({restored} item(s))"
+        if missing:
+            note += f" — {missing} source file(s) no longer exist"
+        self.status_lbl.setText(note)
+        log.info("Draft opened: %s (%d items, %d missing)",
+                 draft_id, restored, missing)
+        if missing:
+            QMessageBox.warning(
+                self, "Missing source files",
+                f"{missing} of {restored} source file(s) from this draft "
+                "no longer exist on disk. Those rows will fail if you "
+                "start the batch — remove them or restore the files.")
+        if start_after and restored:
+            self._start_batch()
+        return True
+
+    def open_drafts_manager(self):
+        dlg = DraftsDialog(self)
+        dlg.exec()
 
     def _maybe_restore_queue(self):
         items = load_queue_state()
@@ -6039,6 +6284,22 @@ class MainWindow(QMainWindow):
         # V14.5.0: three-way dialog — Restore & Start lets the user
         # pick up the interrupted batch with one click; Restore Only
         # leaves the queue ready for review; Discard wipes it.
+        # V14.11.0: mirror the previous session into the drafts list as
+        # the reserved "Last session" entry, so the crash-recovery queue
+        # is reachable from the Drafts manager instead of being a
+        # one-shot prompt the user can lose by clicking Discard.
+        try:
+            prev = drafts_store.load_draft(drafts_store.LAST_SESSION_ID)
+            snap = drafts_store.make_draft(
+                "Last session", items,
+                (prev or {}).get("settings", {}),
+                draft_id=drafts_store.LAST_SESSION_ID, kind="last_session")
+            if prev and prev.get("created_at"):
+                snap["created_at"] = prev["created_at"]
+            drafts_store.save_draft(snap)
+        except Exception as e:
+            log.warning("Could not mirror last session into drafts: %s", e)
+
         msg = QMessageBox(self)
         msg.setWindowTitle("Resume previous batch?")
         msg.setIcon(QMessageBox.Icon.Question)
@@ -6050,10 +6311,17 @@ class MainWindow(QMainWindow):
             "Resume && Start", QMessageBox.ButtonRole.AcceptRole)
         restore_btn = msg.addButton(
             "Restore only", QMessageBox.ButtonRole.AcceptRole)
+        drafts_btn = msg.addButton(
+            "Open Drafts…", QMessageBox.ButtonRole.ActionRole)
         msg.addButton("Discard", QMessageBox.ButtonRole.DestructiveRole)
         msg.setDefaultButton(start_btn)
         msg.exec()
         clicked = msg.clickedButton()
+        if clicked is drafts_btn:
+            # Kept in the drafts list either way -- let the user choose
+            # there instead of forcing the decision now.
+            self.open_drafts_manager()
+            return
         if clicked not in (start_btn, restore_btn):
             clear_queue_state()
             return

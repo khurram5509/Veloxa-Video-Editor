@@ -8,10 +8,10 @@ from pathlib import Path
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
-    QDialog, QFileDialog, QGroupBox, QHBoxLayout, QHeaderView, QInputDialog,
-    QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
-    QPushButton, QTableWidget, QTableWidgetItem, QTextBrowser, QVBoxLayout,
-    QWidget,
+    QCheckBox, QDialog, QFileDialog, QGroupBox, QHBoxLayout, QHeaderView,
+    QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
+    QMessageBox, QPushButton, QTableWidget, QTableWidgetItem, QTextBrowser,
+    QVBoxLayout, QWidget,
 )
 
 
@@ -1215,3 +1215,230 @@ class ProfileManagerDialog(QDialog):
         self.main._schedule_preview()
         self.main._update_profile_button_state()
         self.accept()
+
+
+# ============================================================== DraftsDialog
+
+class DraftsDialog(QDialog):
+    """V14.11.0 Save Progress: manage saved drafts.
+
+    A draft is a full work-session snapshot (queue rows + settings). From
+    here the user can resume one (open it into the window), submit it
+    (open and immediately start encoding), rename it, delete it, or save
+    the current session as a new draft. The auto-save toggle lives here
+    too, so the setting sits next to the thing it affects.
+    """
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.main = parent
+        self._metas = []
+        self.setWindowTitle("Saved Drafts")
+        self.setMinimumSize(760, 460)
+
+        v = QVBoxLayout(self)
+
+        intro = QLabel(
+            "A draft stores your whole session -- every queue row (with "
+            "its profile and done/pending status) plus all Trim, "
+            "Watermark, Audio Visuals, and Output settings. Open one to "
+            "pick up exactly where you left off.")
+        intro.setProperty("role", "muted")
+        intro.setWordWrap(True)
+        v.addWidget(intro)
+
+        self.table = QTableWidget(0, 4)
+        self.table.setHorizontalHeaderLabels(
+            ["Draft", "Items", "Progress", "Last saved"])
+        self.table.verticalHeader().setVisible(False)
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.setSelectionBehavior(
+            QTableWidget.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(
+            QTableWidget.SelectionMode.SingleSelection)
+        self.table.setToolTip(
+            "Saved drafts, most recently saved first. 'Autosave' and "
+            "'Last session' are maintained automatically by Veloxa.")
+        hdr = self.table.horizontalHeader()
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        for col in (1, 2, 3):
+            hdr.setSectionResizeMode(
+                col, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.doubleClicked.connect(self._open_selected)
+        self.table.itemSelectionChanged.connect(self._sync_buttons)
+        v.addWidget(self.table, 1)
+
+        row = QHBoxLayout()
+        self.open_btn = QPushButton("📂 Open")
+        self.open_btn.setToolTip(
+            "Load this draft into the main window -- queue and settings "
+            "-- so you can keep editing it.")
+        self.open_btn.clicked.connect(self._open_selected)
+        row.addWidget(self.open_btn)
+
+        self.start_btn = QPushButton("▶ Open && Start")
+        self.start_btn.setObjectName("primary")
+        self.start_btn.setToolTip(
+            "Load this draft and immediately start encoding its pending "
+            "rows. Rows already marked done are not re-encoded.")
+        self.start_btn.clicked.connect(self._open_and_start)
+        row.addWidget(self.start_btn)
+
+        self.rename_btn = QPushButton("✎ Rename...")
+        self.rename_btn.setToolTip(
+            "Rename this draft. Auto-maintained drafts can't be renamed.")
+        self.rename_btn.clicked.connect(self._rename_selected)
+        row.addWidget(self.rename_btn)
+
+        self.del_btn = QPushButton("🗑 Delete")
+        self.del_btn.setObjectName("danger")
+        self.del_btn.setToolTip(
+            "Permanently delete this draft. Source files on disk are "
+            "never touched.")
+        self.del_btn.clicked.connect(self._delete_selected)
+        row.addWidget(self.del_btn)
+
+        row.addStretch()
+        self.save_btn = QPushButton("💾 Save Current as New Draft")
+        self.save_btn.setToolTip(
+            "Save the current queue and settings as a brand-new draft.")
+        self.save_btn.clicked.connect(self._save_current)
+        row.addWidget(self.save_btn)
+        v.addLayout(row)
+
+        self.autosave_chk = QCheckBox(
+            "Auto-save progress after each change and after each "
+            "completed video")
+        self.autosave_chk.setToolTip(
+            "When on, progress is saved automatically whenever the queue "
+            "changes and each time a video finishes encoding. It updates "
+            "the draft you have open, or a rolling 'Autosave' entry when "
+            "no draft is open. Turn off to save only when you click "
+            "Save Progress.")
+        self.autosave_chk.setChecked(self.main.is_autosave_enabled())
+        self.autosave_chk.toggled.connect(self._on_autosave_toggled)
+        v.addWidget(self.autosave_chk)
+
+        bottom = QHBoxLayout()
+        self.status_lbl = QLabel("")
+        self.status_lbl.setProperty("role", "muted")
+        self.status_lbl.setWordWrap(True)
+        bottom.addWidget(self.status_lbl, 1)
+        close_btn = QPushButton("✕ Close")
+        close_btn.setDefault(True)
+        close_btn.clicked.connect(self.accept)
+        bottom.addWidget(close_btn)
+        v.addLayout(bottom)
+
+        self._refresh()
+        mirror_tooltips_to_accessibility(self)
+
+    # ------------------------------------------------------ helpers
+
+    def _refresh(self):
+        from . import drafts as drafts_store
+        metas = drafts_store.list_drafts()
+        self._metas = metas
+        self.table.setRowCount(len(metas))
+        for r, m in enumerate(metas):
+            name_item = QTableWidgetItem(drafts_store.display_name(m))
+            name_item.setData(Qt.ItemDataRole.UserRole, m["id"])
+            if m["id"] in drafts_store.RESERVED_IDS:
+                name_item.setToolTip("Maintained automatically by Veloxa.")
+            self.table.setItem(r, 0, name_item)
+            self.table.setItem(r, 1, QTableWidgetItem(str(m["n_items"])))
+            total = m["n_items"]
+            prog = f"{m['n_done']}/{total} done" if total else "empty"
+            self.table.setItem(r, 2, QTableWidgetItem(prog))
+            self.table.setItem(
+                r, 3,
+                QTableWidgetItem((m.get("updated_at") or "").replace(
+                    "T", "  ")))
+        if metas:
+            self.table.selectRow(0)
+        self.status_lbl.setText(
+            f"{len(metas)} draft(s) saved."
+            if metas else "No drafts saved yet.")
+        self._sync_buttons()
+
+    def _sync_buttons(self):
+        from . import drafts as drafts_store
+        did = self._selected_id()
+        has = did is not None
+        self.open_btn.setEnabled(has)
+        self.start_btn.setEnabled(has)
+        self.del_btn.setEnabled(has)
+        self.rename_btn.setEnabled(
+            has and did not in drafts_store.RESERVED_IDS)
+
+    def _selected_id(self):
+        r = self.table.currentRow()
+        if r < 0 or r >= self.table.rowCount():
+            return None
+        it = self.table.item(r, 0)
+        if it is None:
+            return None
+        did = it.data(Qt.ItemDataRole.UserRole)
+        return did if isinstance(did, str) else None
+
+    # ------------------------------------------------------ actions
+
+    def _open_selected(self):
+        did = self._selected_id()
+        if did and self.main.load_draft_into_window(did):
+            self.accept()
+
+    def _open_and_start(self):
+        did = self._selected_id()
+        if did and self.main.load_draft_into_window(did, start_after=True):
+            self.accept()
+
+    def _rename_selected(self):
+        from . import drafts as drafts_store
+        did = self._selected_id()
+        if not did or did in drafts_store.RESERVED_IDS:
+            return
+        cur = drafts_store.load_draft(did) or {}
+        new, ok = QInputDialog.getText(
+            self, "Rename Draft", "New name:", text=cur.get("name", ""))
+        if not ok or not new.strip():
+            return
+        if drafts_store.rename_draft(did, new.strip()):
+            if self.main._current_draft_id == did:
+                self.main._set_current_draft(did, new.strip())
+            self._refresh()
+
+    def _delete_selected(self):
+        from . import drafts as drafts_store
+        did = self._selected_id()
+        if not did:
+            return
+        meta = next((m for m in self._metas if m["id"] == did), {})
+        label = drafts_store.display_name(meta) if meta else did
+        r = QMessageBox.question(
+            self, "Delete Draft",
+            f"Delete the draft '{label}'?\n\n"
+            "This only removes the saved draft -- your video files on "
+            "disk are not touched.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if r != QMessageBox.StandardButton.Yes:
+            return
+        if drafts_store.delete_draft(did):
+            if self.main._current_draft_id == did:
+                self.main._set_current_draft("", "")
+            self._refresh()
+        else:
+            QMessageBox.warning(self, "Delete Draft",
+                                "Could not delete that draft file.")
+
+    def _save_current(self):
+        if self.main.save_progress(ask_name=True):
+            self._refresh()
+
+    def _on_autosave_toggled(self, on: bool):
+        self.main.set_autosave_enabled(on)
+        self.status_lbl.setText(
+            "Auto-save is ON -- progress saves after each change and "
+            "each completed video."
+            if on else
+            "Auto-save is OFF -- use Save Progress to save manually.")

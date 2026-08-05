@@ -1,3 +1,60 @@
+# Veloxa Video Editor — V14.11.0
+
+**Feature.** Save Progress — save your whole session as a named draft at any point, with optional auto-save, and resume / edit / start / delete drafts later.
+
+## What a draft holds
+
+A draft is a snapshot of the **entire session**: every queue row (with its assigned profile and its done / pending status) *plus* the complete settings state — Trim, Watermark, Audio Visuals, and Output. Open one and you're back exactly where you left off.
+
+## Saving
+
+- **💾 Save Progress** (`Ctrl+Shift+P`, also *Tools → Save Progress*) — saves the current session. If a draft is open it updates that draft; otherwise it asks for a name. Works **before you start** a batch and **at any stage during one**.
+- A label beside the button shows which draft is currently open, or *(none)*.
+
+## Managing — 🗂 Drafts…
+
+`Ctrl+Shift+D`, or *Tools → Saved Drafts…*. Lists every draft with its item count, how many are done, and when it was last saved:
+
+| Action | What it does |
+|---|---|
+| **Open** | Resume the draft into the main window — queue *and* settings — to keep editing. |
+| **Open & Start** | Resume it and immediately start encoding. Rows already marked done are **not** re-encoded. |
+| **Rename** | Rename a draft (auto-maintained entries excepted). |
+| **Delete** | Remove the draft. Your video files on disk are never touched. |
+| **Save Current as New Draft** | Fork the current session into a brand-new draft. |
+
+## Auto-save
+
+A checkbox in the drafts manager (on by default). When enabled, progress saves automatically after **every queue change** and after **every completed video**:
+
+- If a draft is open, it's updated in place.
+- With no draft open, a rolling **Autosave** entry is maintained instead.
+- Turn it off to save only when you click Save Progress.
+
+Auto-save is fully guarded — a failed write is logged and skipped, and can never interrupt a running encode.
+
+## Crash recovery is now part of drafts
+
+The previous session's queue also appears in the drafts list as **Last session**, and the startup "Resume previous batch?" prompt gained an **Open Drafts…** button. An interrupted batch stays recoverable even if you dismiss that prompt.
+
+## Safety details
+
+- Opening a draft is refused while a batch is running, and asks for confirmation before replacing a non-empty queue.
+- If a draft's source files have moved or been deleted, opening it tells you how many are missing.
+- Draft writes are atomic (temp file + replace), so a crash mid-save can't truncate an existing draft. Draft ids are validated against path traversal.
+
+## Also
+
+- QA suites now redirect `%APPDATA%` to a sandbox, so no test run can read or write your real queue, drafts, or logs.
+- New suite `_qa/v1411_save_progress.py` (38 checks). **708 automated checks across 12 suites**, all passing.
+
+## Downloads
+
+- **Windows:** ``Veloxa-Video-Editor-V14.11.0-Setup.exe`` (271 MB, --onedir)
+- **macOS:** ``Veloxa-Video-Editor-V14.11.0-macOS.dmg`` (~88 MB, ad-hoc signed)
+
+---
+
 # Veloxa Video Editor — V14.10.0
 
 **Feature.** Profile shortcut numbers — select queue rows, type a number, and that profile is assigned to all of them. Plus full tooltip coverage with screen-reader accessibility (landed on main after V14.9.1).

@@ -26,6 +26,15 @@ _app = QApplication.instance() or QApplication(sys.argv)
 from app.main_window import MainWindow, ProfileCombo, NO_PROFILE
 from app.persistence import queue_state_path, clear_queue_state
 
+# Snapshot + clear the queue-state file BEFORE constructing MainWindow:
+# __init__ calls _maybe_restore_queue(), which pops a MODAL "Resume
+# previous batch?" dialog whenever a previous queue exists -- offscreen
+# that blocks forever. Restored byte-for-byte in the finally block.
+_qpath_pre = queue_state_path()
+_qbackup_pre = (_qpath_pre.read_text(encoding="utf-8")
+                if _qpath_pre.exists() else None)
+clear_queue_state()
+
 PASS, FAIL = [], []
 def check(name, ok, detail=""):
     (PASS if ok else FAIL).append((name, detail))
@@ -43,11 +52,9 @@ mw = MainWindow(app_icon=QIcon(), log_file_path=ROOT / "veloxa.log")
 profiles_before = copy.deepcopy(mw.profiles)
 last_profile_before = mw.settings.value("last_profile", NO_PROFILE)
 # Queue persistence is a JSON FILE (persistence.queue_state_path), NOT a
-# QSettings key. Snapshot it -- our _add_files below overwrites it, and
-# a leaked file makes every later MainWindow() pop the modal "Resume
-# previous batch?" dialog, which hangs offscreen test runs forever.
-_qpath = queue_state_path()
-_qbackup = _qpath.read_text(encoding="utf-8") if _qpath.exists() else None
+# QSettings key. The pre-construction snapshot above is the one we
+# restore; alias it here so the finally block reads naturally.
+_qpath, _qbackup = _qpath_pre, _qbackup_pre
 
 try:
     # Fresh, controlled profile set: no numbers at all -> migration.
