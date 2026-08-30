@@ -1,3 +1,29 @@
+# Veloxa Video Editor — V14.11.2
+
+**Data-loss fix.** Clearing the queue while a draft was open silently **erased that draft's saved contents**.
+
+## What was wrong
+
+Introduced in V14.11.0 with Save Progress. With auto-save on and a named draft open, emptying the queue — **Clear All**, **Remove Completed**, or removing the last remaining row — caused auto-save to write **zero items straight over the draft**. Your saved work was destroyed instantly, with no warning, no confirmation, and no undo.
+
+It was found by inspecting a real user's drafts folder, which contained a manual draft holding 0 items. `Save Progress` refuses to save an empty queue, so the only way a named draft can reach 0 items is auto-save overwriting it — which reproduced first try.
+
+## The fix
+
+Auto-save now enforces a simple invariant: **it can add or update content, but never erase it.**
+
+If the queue is empty and the target draft still holds items, auto-save skips the write entirely and the status bar says so — e.g. *"Queue cleared. Draft 'Module 1 batch' still holds its 42 saved item(s)."* The same protection covers the rolling **Autosave** slot.
+
+Emptying a draft is now only possible deliberately: delete the draft from the Drafts manager. (Explicit `Save Progress` already refuses an empty queue.)
+
+## Tests
+
+- 4 new guard probes in `_qa/v1411_save_progress.py` covering both the named-draft and rolling-slot paths, plus the status-bar notice.
+- Adversarial edge-case sweep added during verification: corrupt / hostile draft JSON, drafts referencing deleted profiles, drafts whose source files vanished, profile-number uniqueness under churn, and the two-digit shortcut reaching profile #12 — all clean.
+- **735 automated checks across 13 suites**, plus 99/99 real-FFmpeg end-to-end encodes — all passing.
+
+---
+
 # Veloxa Video Editor — V14.11.1
 
 **Bug fix (reported from the field).** A failed update check was being reported as **"You're up to date."** — hiding real updates.

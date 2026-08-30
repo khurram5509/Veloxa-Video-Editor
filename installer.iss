@@ -5,7 +5,7 @@
 ;
 ;   "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" installer.iss
 ;
-; The output lands in .\installer\Veloxa-Video-Editor-V14.11.1-Setup.exe.
+; The output lands in .\installer\Veloxa-Video-Editor-V14.11.2-Setup.exe.
 ;
 ; V14.8.1 fix: the installed EXE is now ALWAYS named
 ; ``Veloxa-Video-Editor.exe`` (no version in the filename), and the
@@ -19,13 +19,13 @@
 ; versioned files / shortcuts left behind by V11..V14.0.1 installs.
 
 #define AppName             "Veloxa Video Editor"
-#define AppVersion          "14.11.1"
+#define AppVersion          "14.11.2"
 #define AppPublisher        "VeloxaLAB"
 #define AppExeName          "Veloxa-Video-Editor.exe"
 ; The PyInstaller output is still versioned so dist/ shows the build
 ; we're packaging. Inno renames it to AppExeName at install time via
 ; DestName= in [Files].
-#define AppBuildExe         "Veloxa-Video-Editor-V14.11.1.exe"
+#define AppBuildExe         "Veloxa-Video-Editor-V14.11.2.exe"
 ; AppId kept stable since V11.x so installer-driven upgrades replace
 ; the previous Veloxa install in place. Same GUID for the entire
 ; V11.x -> V14.x series. Do NOT change unless you actually want a

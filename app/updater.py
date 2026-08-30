@@ -54,7 +54,7 @@ log = logging.getLogger("veloxa.updater")
 # Single source of truth for the application version. Imported by
 # ``app/docs.py``, ``app/main_window.py`` title bar, and the regression
 # tests. Bump this when cutting a new release.
-APP_VERSION = "14.11.1"
+APP_VERSION = "14.11.2"
 
 # GitHub repo to poll for releases. Format: ``owner/repo`` (no leading
 # slash, no trailing slash). Set to ``""`` to disable update checks

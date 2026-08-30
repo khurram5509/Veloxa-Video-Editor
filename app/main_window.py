@@ -6135,9 +6135,32 @@ class MainWindow(QMainWindow):
             return
         try:
             items = self._collect_queue_items()
-            if not items and not self._current_draft_id:
-                # Nothing to remember and no named draft to keep current.
-                return
+            if not items:
+                # V14.11.2 data-loss fix: auto-save must NEVER blank a
+                # draft that has content. Before this, clearing the queue
+                # (Clear All / Remove Completed / removing the last row)
+                # while a named draft was open wrote 0 items straight over
+                # it -- silently destroying saved work with no undo. The
+                # invariant is now "auto-save can add or update content,
+                # never erase it"; emptying a draft requires an explicit
+                # Save Progress (which refuses empty queues anyway) or
+                # deleting the draft outright.
+                target = (self._current_draft_id
+                          or drafts_store.AUTOSAVE_ID)
+                existing = drafts_store.load_draft(target)
+                if existing and existing.get("items"):
+                    if self._current_draft_name:
+                        self.status_lbl.setText(
+                            f"Queue cleared. Draft "
+                            f"'{self._current_draft_name}' still holds its "
+                            f"{len(existing['items'])} saved item(s).")
+                    log.info("Auto-save skipped: refusing to blank draft "
+                             "%s (%d saved items)",
+                             target, len(existing["items"]))
+                    return
+                if not self._current_draft_id:
+                    # Nothing to remember, nothing to protect.
+                    return
             if self._current_draft_id:
                 existing = drafts_store.load_draft(self._current_draft_id)
                 name = (self._current_draft_name

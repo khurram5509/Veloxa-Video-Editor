@@ -196,6 +196,45 @@ try:
           and drafts_store.load_draft(saved_id) is None)
 
     print()
+    print("[8b] DATA LOSS GUARD: emptying the queue must not blank a draft")
+    # Field bug (V14.11.1): with a named draft open and auto-save on,
+    # Clear All / Remove Completed / removing the last row wrote 0 items
+    # straight over the draft, destroying saved work silently. Evidence
+    # was a 0-item draft in a real user's drafts folder.
+    guard_id = drafts_store.new_draft_id()
+    mw.file_list.clear()
+    mw._suppress_autosave = True
+    mw._add_files([str(f1), str(f2)])
+    mw._suppress_autosave = False
+    mw._set_current_draft(guard_id, "Guarded work")
+    mw.save_progress()
+    check("guard draft saved with 2 items",
+          len(drafts_store.load_draft(guard_id)["items"]) == 2)
+    mw.file_list.clear()          # <-- the destructive user action
+    mw._save_queue_state()
+    kept = drafts_store.load_draft(guard_id)
+    check("clearing the queue does NOT blank the open named draft",
+          kept is not None and len(kept["items"]) == 2,
+          f"got {len(kept['items']) if kept else None} items")
+    check("status bar explains the draft was preserved",
+          "still holds" in mw.status_lbl.text().lower()
+          or "saved item" in mw.status_lbl.text().lower(),
+          repr(mw.status_lbl.text()))
+    # Same protection for the rolling slot.
+    mw._set_current_draft("", "")
+    mw._suppress_autosave = True
+    mw._add_files([str(f1)])
+    mw._suppress_autosave = False
+    mw._save_queue_state()
+    roll_n = len(drafts_store.load_draft(drafts_store.AUTOSAVE_ID)["items"])
+    mw.file_list.clear()
+    mw._save_queue_state()
+    check("clearing the queue does NOT blank the rolling Autosave slot",
+          len(drafts_store.load_draft(
+              drafts_store.AUTOSAVE_ID)["items"]) == roll_n)
+    drafts_store.delete_draft(guard_id)
+
+    print()
     print("[9] Reserved slots + wiring")
     check("reserved ids defined",
           drafts_store.AUTOSAVE_ID in drafts_store.RESERVED_IDS
