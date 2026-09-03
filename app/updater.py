@@ -31,6 +31,7 @@ Settings keys (in the GUI ``QSettings``):
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -40,6 +41,7 @@ import sys
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from typing import Callable, Optional
@@ -47,6 +49,46 @@ from typing import Callable, Optional
 from PyQt6.QtCore import QThread, pyqtSignal
 
 log = logging.getLogger("veloxa.updater")
+
+# V14.11.3 (security): the auto-updater downloads an installer and then
+# EXECUTES it, so the download URL must be a GitHub host reached over
+# HTTPS. GitHub serves release assets from github.com and redirects to
+# its object CDN (objects.githubusercontent.com / *.githubusercontent
+# .com / release-assets.githubusercontent.com). Anything else is refused.
+_TRUSTED_DOWNLOAD_HOSTS = (
+    "github.com",
+    "objects.githubusercontent.com",
+    "release-assets.githubusercontent.com",
+)
+
+
+def is_trusted_download_url(url: str) -> bool:
+    """True iff ``url`` is an HTTPS URL on a known GitHub download host.
+    Used to gate what the auto-updater is willing to fetch-and-run."""
+    if not url:
+        return False
+    try:
+        p = urllib.parse.urlparse(url)
+    except (ValueError, TypeError):
+        return False
+    if p.scheme != "https":
+        return False
+    host = (p.hostname or "").lower()
+    return (host in _TRUSTED_DOWNLOAD_HOSTS
+            or host.endswith(".githubusercontent.com"))
+
+
+def sha256_of_file(path: str, chunk: int = 1 << 20) -> str:
+    """Hex SHA-256 of a file, streamed so large installers don't load
+    into memory. Returns "" on any read error."""
+    h = hashlib.sha256()
+    try:
+        with open(path, "rb") as fp:
+            for block in iter(lambda: fp.read(chunk), b""):
+                h.update(block)
+    except OSError:
+        return ""
+    return h.hexdigest()
 
 
 # ---------------------------------------------------------------- config
@@ -87,6 +129,12 @@ class UpdateInfo:
     asset_url: str         # direct download URL for the Windows installer
     asset_name: str        # asset's filename
     asset_size: int        # size in bytes, 0 if unknown
+    # V14.11.3 (security): GitHub computes a per-asset SHA-256 server-side
+    # and returns it as ``digest`` ("sha256:<hex>"). We verify the
+    # downloaded bytes against it before the installer is ever launched,
+    # so a corrupted or CDN-tampered download can't be executed. Empty
+    # when the release predates GitHub's digest field.
+    asset_digest: str = ""  # "sha256:<hex>" or "" if unknown
 
 
 # ---------------------------------------------------------------- version utils
@@ -276,15 +324,26 @@ def check_for_updates_detailed(github_repo: str = GITHUB_REPO,
                  "for this platform", tag)
         return None, (f"Release {tag} is available but has no installer "
                       "for this platform yet. Try the release page.")
+    asset_url = asset.get("browser_download_url") or ""
+    # V14.11.3 (security): the download URL comes from the GitHub JSON.
+    # Refuse anything that isn't an HTTPS GitHub host, so a manipulated
+    # response can't redirect the auto-updater to fetch and execute an
+    # installer from an arbitrary server.
+    if not is_trusted_download_url(asset_url):
+        log.warning("Update check: asset URL failed host allowlist: %r",
+                    asset_url)
+        return None, ("The update download URL didn't come from GitHub "
+                      "and was blocked for safety. Use the release page.")
     return UpdateInfo(
         version=display_version,
         tag=tag,
         name=(data.get("name") or tag),
         body=(data.get("body") or ""),
         html_url=(data.get("html_url") or ""),
-        asset_url=(asset.get("browser_download_url") or ""),
+        asset_url=asset_url,
         asset_name=(asset.get("name") or "VeloxaVideoEditor-Setup.exe"),
         asset_size=int(asset.get("size") or 0),
+        asset_digest=(asset.get("digest") or ""),
     ), ""
 
 
@@ -431,6 +490,27 @@ def download_installer(info: UpdateInfo,
         if info.asset_size and abs(actual - info.asset_size) > 1024:
             log.warning("Update download size mismatch: got %d, expected %d",
                         actual, info.asset_size)
+        # V14.11.3 (security): verify the downloaded bytes against the
+        # SHA-256 GitHub computed server-side. This is the gate that
+        # decides whether the file may be launched: a corrupted or
+        # CDN-tampered download will not match and is rejected here,
+        # before ``launch_installer`` ever runs it. Releases predating
+        # GitHub's digest field carry no hash — we proceed but log that
+        # the download was unverified rather than silently trusting it.
+        expected = (info.asset_digest or "").strip().lower()
+        if expected.startswith("sha256:"):
+            want = expected.split(":", 1)[1]
+            got = sha256_of_file(tmp_path)
+            if not got or got != want:
+                raise OSError(
+                    "Downloaded installer failed SHA-256 verification "
+                    f"(expected {want[:12]}..., got {got[:12] or '??'}...). "
+                    "The file was not what GitHub published and will not "
+                    "be run.")
+            log.info("Update download SHA-256 verified OK (%s...)", got[:12])
+        else:
+            log.warning("Update download has no publisher checksum; "
+                        "proceeding UNVERIFIED for %s", info.asset_name)
         return tmp_path
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError,
             OSError, InterruptedError) as exc:

@@ -1033,6 +1033,44 @@ class ProfileManagerDialog(QDialog):
                                  "Unrecognized file format.")
             return
 
+        # V14.11.3 (security): a profile can carry ``custom_ffmpeg_args``,
+        # which are spliced into the FFmpeg command line on every encode.
+        # FFmpeg flags can read or write arbitrary files and reach network
+        # protocols, so importing a profile from someone else means
+        # adopting commands they wrote. Surface any embedded flags before
+        # the import and default to stripping them (the safe choice).
+        risky = {n: (s.get("custom_ffmpeg_args") or "").strip()
+                 for n, s in candidates.items()
+                 if isinstance(s, dict)
+                 and (s.get("custom_ffmpeg_args") or "").strip()}
+        if risky:
+            preview = "\n".join(f"  • {n}:  {args}"
+                                for n, args in list(risky.items())[:8])
+            more = ("\n  … and more" if len(risky) > 8 else "")
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Icon.Warning)
+            box.setWindowTitle("Imported profile contains custom FFmpeg flags")
+            box.setText(
+                f"{len(risky)} of the profiles you're importing include "
+                "custom FFmpeg command-line flags. These run on every "
+                "encode and can read or write files on your PC.\n\n"
+                f"{preview}{more}\n\n"
+                "Only keep them if you trust the source of this file.")
+            keep_btn = box.addButton("Keep flags",
+                                     QMessageBox.ButtonRole.AcceptRole)
+            strip_btn = box.addButton("Remove flags (recommended)",
+                                      QMessageBox.ButtonRole.AcceptRole)
+            cancel_btn = box.addButton(QMessageBox.StandardButton.Cancel)
+            box.setDefaultButton(strip_btn)
+            box.exec()
+            clicked = box.clickedButton()
+            if clicked is cancel_btn:
+                return
+            if clicked is strip_btn:
+                for n in risky:
+                    if isinstance(candidates.get(n), dict):
+                        candidates[n]["custom_ffmpeg_args"] = ""
+
         added = 0
         skipped = 0
         # One undo entry covers the whole import operation.

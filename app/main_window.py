@@ -5444,6 +5444,12 @@ class MainWindow(QMainWindow):
                 result = result + f"_Part{part_no}"
         # Strip path separators the user accidentally put in the pattern.
         result = result.replace("/", "_").replace("\\", "_")
+        # V14.11.3: cap the length. A pattern with a huge field width
+        # (e.g. {n:99999999}) would otherwise resolve to a multi-hundred-MB
+        # string and blow past the OS filename limit. 200 chars leaves
+        # headroom under the 255-char component limit on Windows/macOS.
+        if len(result) > 200:
+            result = result[:196] + ".mp4"
         if not result.lower().endswith(".mp4"):
             result += ".mp4"
         return str(sp.parent / result)

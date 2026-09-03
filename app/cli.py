@@ -402,6 +402,10 @@ def run_cli(argv: list) -> int:
                 else:
                     out_name = out_name + f"_Part{part_no}"
             out_name = out_name.replace("/", "_").replace("\\", "_")
+            # V14.11.3: cap length so a huge field width in the pattern
+            # (e.g. {n:99999999}) can't resolve to an oversized filename.
+            if len(out_name) > 200:
+                out_name = out_name[:196] + ".mp4"
             if not out_name.lower().endswith(".mp4"):
                 out_name += ".mp4"
             if output_dir is not None:
