@@ -15,6 +15,16 @@ sys.path.insert(0, str(ROOT))
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+# ---- HARD ISOLATION (V14.11.3) -------------------------------------
+# Sandbox BOTH stores before importing `app`: %APPDATA% (queue state /
+# drafts / logs) and VELOXA_SETTINGS_FILE (the QSettings store, which is
+# otherwise the Windows REGISTRY). Constructing MainWindow against the
+# real registry can rewrite profiles; this suite must never touch them.
+import tempfile
+_SANDBOX = Path(tempfile.mkdtemp(prefix="veloxa_v1410tt_home_"))
+os.environ["APPDATA"] = str(_SANDBOX)
+os.environ["VELOXA_SETTINGS_FILE"] = str(_SANDBOX / "settings.ini")
+
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QPushButton, QCheckBox, QComboBox, QSpinBox,
     QDoubleSpinBox, QLineEdit, QSlider,
@@ -27,13 +37,9 @@ from app.main_window import MainWindow
 from app.dialogs import mirror_tooltips_to_accessibility  # noqa: F401
 from app.persistence import queue_state_path, clear_queue_state
 
-# Snapshot + clear the queue-state file BEFORE constructing MainWindow:
-# __init__ calls _maybe_restore_queue(), which pops a MODAL "Resume
-# previous batch?" dialog whenever a previous queue exists -- offscreen
-# that blocks forever. Restored byte-for-byte at the end of the run.
+# Sandbox starts empty: no previous queue, so no modal resume prompt.
 _qpath = queue_state_path()
-_qbackup = _qpath.read_text(encoding="utf-8") if _qpath.exists() else None
-clear_queue_state()
+_qbackup = None
 
 PASS, FAIL = [], []
 def check(name, ok, detail=""):
@@ -48,6 +54,11 @@ print("V14.10.0 -- tooltip + accessibility audit")
 print("=" * 72)
 
 mw = MainWindow(app_icon=QIcon(), log_file_path=ROOT / "veloxa.log")
+# Isolation guard: fail LOUDLY if the settings store is not the sandbox.
+# (Compare resolved paths: Qt reports forward slashes, tempfile gives
+# backslashes on Windows.)
+assert Path(mw.settings.fileName()).resolve().is_relative_to(
+    _SANDBOX.resolve()), f"settings NOT sandboxed: {mw.settings.fileName()}"
 
 INTERACTIVE = (QPushButton, QCheckBox, QComboBox, QSpinBox,
                QDoubleSpinBox, QLineEdit, QSlider)
@@ -121,6 +132,22 @@ check("Folder-format picker dialog mirrors tooltips",
       "mirror_tooltips_to_accessibility(dlg)" in mw_src)
 check("MainWindow mirrors its own tree at startup",
       "mirror_tooltips_to_accessibility(self)" in mw_src)
+
+print()
+print("[5] Failed silent startup update-check must not erase GPU status")
+# Bug-report 04/09 #3: the auto-check fires ~1.5 s after the GPU summary
+# is written; on a rate-limited / offline launch it overwrote that line.
+gpu = mw._describe_gpu_status()
+mw._gpu_status_text = gpu
+mw.status_lbl.setText(gpu)
+mw._on_update_check_failed("GitHub's hourly API limit was reached",
+                           manual=False)
+check("GPU summary survives a failed silent auto-check",
+      mw.status_lbl.text() == gpu, repr(mw.status_lbl.text())[:80])
+mw.status_lbl.setText("Ready")
+mw._on_update_check_failed("offline", manual=False)
+check("a non-GPU status line still gets the failure notice",
+      "Update check unavailable" in mw.status_lbl.text())
 
 mw.deleteLater()
 

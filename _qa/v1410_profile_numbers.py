@@ -18,6 +18,18 @@ sys.path.insert(0, str(ROOT))
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+# ---- HARD ISOLATION (V14.11.3) -------------------------------------
+# This suite mutates profiles and adds queue rows. Point BOTH stores at
+# a throwaway sandbox before importing `app`: %APPDATA% covers queue
+# state / drafts / logs, and VELOXA_SETTINGS_FILE covers the QSettings
+# store (profiles, last_profile, toggles) that otherwise lives in the
+# Windows REGISTRY. An earlier version of this suite sandboxed only
+# APPDATA and rewrote the user's real Autosave draft; a sibling probe
+# with the same gap wiped 18 real profiles.
+_SANDBOX = Path(tempfile.mkdtemp(prefix="veloxa_v1410_home_"))
+os.environ["APPDATA"] = str(_SANDBOX)
+os.environ["VELOXA_SETTINGS_FILE"] = str(_SANDBOX / "settings.ini")
+
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QIcon
 
@@ -26,14 +38,11 @@ _app = QApplication.instance() or QApplication(sys.argv)
 from app.main_window import MainWindow, ProfileCombo, NO_PROFILE
 from app.persistence import queue_state_path, clear_queue_state
 
-# Snapshot + clear the queue-state file BEFORE constructing MainWindow:
-# __init__ calls _maybe_restore_queue(), which pops a MODAL "Resume
-# previous batch?" dialog whenever a previous queue exists -- offscreen
-# that blocks forever. Restored byte-for-byte in the finally block.
+# The sandbox starts empty, so there is no previous queue to restore and
+# MainWindow.__init__ cannot pop the modal resume prompt. These aliases
+# keep the finally-block restore logic valid (no-ops in a sandbox).
 _qpath_pre = queue_state_path()
-_qbackup_pre = (_qpath_pre.read_text(encoding="utf-8")
-                if _qpath_pre.exists() else None)
-clear_queue_state()
+_qbackup_pre = None
 
 PASS, FAIL = [], []
 def check(name, ok, detail=""):
@@ -48,6 +57,11 @@ print("V14.10.0 -- sticky profile numbers + digit shortcuts")
 print("=" * 72)
 
 mw = MainWindow(app_icon=QIcon(), log_file_path=ROOT / "veloxa.log")
+# Isolation guard: fail LOUDLY if the settings store is not the sandbox.
+# (Compare resolved paths: Qt reports forward slashes, tempfile gives
+# backslashes on Windows.)
+assert Path(mw.settings.fileName()).resolve().is_relative_to(
+    _SANDBOX.resolve()), f"settings NOT sandboxed: {mw.settings.fileName()}"
 
 profiles_before = copy.deepcopy(mw.profiles)
 last_profile_before = mw.settings.value("last_profile", NO_PROFILE)

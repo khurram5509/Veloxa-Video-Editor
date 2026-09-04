@@ -24,6 +24,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 # or logs. Set before importing anything from `app`.
 _SANDBOX = Path(tempfile.mkdtemp(prefix="veloxa_v1411_home_"))
 os.environ["APPDATA"] = str(_SANDBOX)
+# V14.11.3: also sandbox the QSettings store (profiles etc. live in the
+# Windows registry, NOT under APPDATA).
+os.environ["VELOXA_SETTINGS_FILE"] = str(_SANDBOX / "settings.ini")
 
 from PyQt6.QtWidgets import QApplication, QMessageBox
 from PyQt6.QtGui import QIcon
@@ -64,6 +67,11 @@ print("=" * 72)
 _ddir = drafts_store.drafts_dir()
 
 mw = MainWindow(app_icon=QIcon(), log_file_path=ROOT / "veloxa.log")
+# Isolation guard: fail LOUDLY if the settings store is not the sandbox.
+# (Compare resolved paths: Qt reports forward slashes, tempfile gives
+# backslashes on Windows.)
+assert Path(mw.settings.fileName()).resolve().is_relative_to(
+    _SANDBOX.resolve()), f"settings NOT sandboxed: {mw.settings.fileName()}"
 # QSettings is registry-backed on Windows (not under APPDATA), so the
 # two keys this suite touches are snapshotted and restored explicitly.
 _autosave_before = mw.settings.value("autosave_progress", True)
@@ -233,6 +241,32 @@ try:
           len(drafts_store.load_draft(
               drafts_store.AUTOSAVE_ID)["items"]) == roll_n)
     drafts_store.delete_draft(guard_id)
+
+    print()
+    print("[8c] Profile rename / delete propagates into SAVED drafts")
+    # Bug-report 04/09: the live queue was rebased on rename, but drafts
+    # on disk kept the old name, so their rows came back orphaned and
+    # encoded with the live form silently.
+    mw.file_list.clear()
+    mw._suppress_autosave = True
+    mw._add_files([str(f1), str(f2)])
+    mw._suppress_autosave = False
+    for i in range(mw.file_list.count()):
+        mw._item_data(mw.file_list.item(i)).profile_name = "OldName"
+    rb_id = drafts_store.new_draft_id()
+    mw._set_current_draft(rb_id, "Rebase me")
+    mw.save_progress()
+    mw.file_list.clear()                        # draft is now only on disk
+    n = mw._rebase_queue_rows(renames={"OldName": "NewName"})
+    rows = [it["profile_name"] for it in drafts_store.load_draft(rb_id)["items"]]
+    check("rename rewrote the saved draft's rows",
+          rows == ["NewName", "NewName"], f"got {rows}")
+    check("rebase reports the draft rows it touched", n == 2, f"got {n}")
+    mw._rebase_queue_rows(deleted={"NewName"})
+    rows = [it["profile_name"] for it in drafts_store.load_draft(rb_id)["items"]]
+    check("delete falls saved-draft rows back to (no profile)",
+          rows == [NO_PROFILE, NO_PROFILE], f"got {rows}")
+    drafts_store.delete_draft(rb_id)
 
     print()
     print("[9] Reserved slots + wiring")

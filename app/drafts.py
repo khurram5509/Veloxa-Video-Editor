@@ -187,3 +187,45 @@ def display_name(meta: dict) -> str:
     if did in RESERVED_LABELS:
         return RESERVED_LABELS[did]
     return meta.get("name") or "Untitled draft"
+
+
+def rebase_profile_names(renames: dict = None, deleted: set = None,
+                         fallback: str = "") -> int:
+    """V14.11.3: keep saved drafts in step with profile renames/deletes.
+
+    The live queue is rebased by ``MainWindow._rebase_queue_rows``; this
+    does the same for every draft ON DISK, whose rows would otherwise be
+    left pinned to a name that no longer exists. Such a row silently
+    falls back to the live form at encode time (see ``_opts_for_row``),
+    i.e. the user encodes with the wrong settings and no error -- the
+    exact failure the live-queue rebase was added to prevent.
+
+    ``renames`` maps OLD -> NEW; rows pinned to a name in ``deleted``
+    are set to ``fallback`` (the caller passes NO_PROFILE). Returns the
+    number of rows rewritten across all drafts. Never raises.
+    """
+    renames = renames or {}
+    deleted = deleted or set()
+    if not renames and not deleted:
+        return 0
+    touched = 0
+    for meta in list_drafts():
+        d = load_draft(meta["id"])
+        if not d:
+            continue
+        changed = 0
+        for it in d.get("items", []):
+            if not isinstance(it, dict):
+                continue
+            pn = it.get("profile_name") or ""
+            if pn in renames:
+                it["profile_name"] = renames[pn]
+                changed += 1
+            elif pn in deleted:
+                it["profile_name"] = fallback
+                changed += 1
+        if changed:
+            if save_draft(d):
+                touched += changed
+                log.info("Rebased %d row(s) in draft %s", changed, d["id"])
+    return touched

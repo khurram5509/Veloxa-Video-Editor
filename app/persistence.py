@@ -20,6 +20,22 @@ def app_data_dir() -> Path:
     return d
 
 
+def app_qsettings():
+    """The app's QSettings store. Normally the native store
+    (``Veloxa-VD/V10`` -- the Windows registry). V14.11.3: honours
+    ``VELOXA_SETTINGS_FILE=<path.ini>`` so test runs can point the
+    ENTIRE settings store (profiles, last_profile, toggles...) at a
+    throwaway file. Motivation: a test that redirected only %APPDATA%
+    still wrote to the real registry and wiped a user's 18 profiles.
+    Every ``QSettings("Veloxa-VD", "V10")`` in the app goes through here.
+    """
+    from PyQt6.QtCore import QSettings
+    override = os.environ.get("VELOXA_SETTINGS_FILE", "").strip()
+    if override:
+        return QSettings(override, QSettings.Format.IniFormat)
+    return QSettings("Veloxa-VD", "V10")
+
+
 def watermarks_dir() -> Path:
     """Central location for image watermarks copied into the app's data dir.
 

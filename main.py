@@ -94,7 +94,8 @@ def main():
     # V13.1: System / Light / Dark theme switcher. Default is "system"
     # so a fresh install on Windows light-mode looks native; the user
     # can override via the View menu.
-    s = QSettings("Veloxa-VD", "V10")
+    from app.persistence import app_qsettings
+    s = app_qsettings()   # V14.11.3: honours VELOXA_SETTINGS_FILE
     apply_theme(app, s.value("theme_mode", THEME_SYSTEM))
 
     icon = _load_icon()

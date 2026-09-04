@@ -96,7 +96,7 @@ def sha256_of_file(path: str, chunk: int = 1 << 20) -> str:
 # Single source of truth for the application version. Imported by
 # ``app/docs.py``, ``app/main_window.py`` title bar, and the regression
 # tests. Bump this when cutting a new release.
-APP_VERSION = "14.11.2"
+APP_VERSION = "14.11.3"
 
 # GitHub repo to poll for releases. Format: ``owner/repo`` (no leading
 # slash, no trailing slash). Set to ``""`` to disable update checks

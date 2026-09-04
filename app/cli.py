@@ -25,6 +25,7 @@ from engine import (
     detect_available_encoders,
 )
 from .profile_opts import profile_to_opts
+from .persistence import app_qsettings
 
 
 VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".flv",
@@ -210,7 +211,7 @@ def run_cli(argv: list) -> int:
     app = QCoreApplication(sys.argv)
     QCoreApplication.setOrganizationName("Veloxa-VD")
     QCoreApplication.setApplicationName("V10")
-    settings = QSettings("Veloxa-VD", "V10")
+    settings = app_qsettings()   # V14.11.3: honours VELOXA_SETTINGS_FILE
     profiles = _load_profiles(settings)
 
     if args.list_profiles:

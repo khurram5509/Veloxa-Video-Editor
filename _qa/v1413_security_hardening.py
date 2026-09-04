@@ -146,6 +146,10 @@ from PyQt6.QtWidgets import QApplication, QMessageBox
 from PyQt6.QtGui import QIcon
 SANDBOX = Path(tempfile.mkdtemp(prefix="veloxa_sec_home_"))
 os.environ["APPDATA"] = str(SANDBOX)
+# V14.11.3: also sandbox the QSettings store (registry-backed). The
+# import test below writes last_profile_dir; it must land here, not in
+# the user's real settings.
+os.environ["VELOXA_SETTINGS_FILE"] = str(SANDBOX / "settings.ini")
 _app = QApplication.instance() or QApplication(sys.argv)
 from app.persistence import queue_state_path, clear_queue_state
 clear_queue_state()
@@ -154,6 +158,11 @@ from app.dialogs import ProfileManagerDialog
 import json as _json
 
 mw = MainWindow(app_icon=QIcon(), log_file_path=ROOT / "veloxa.log")
+# Isolation guard: fail LOUDLY if the settings store is not the sandbox.
+# (Compare resolved paths: Qt reports forward slashes, tempfile gives
+# backslashes on Windows.)
+assert Path(mw.settings.fileName()).resolve().is_relative_to(
+    SANDBOX.resolve()), f"settings NOT sandboxed: {mw.settings.fileName()}"
 profs_before = dict(mw.profiles)
 try:
     # Build a malicious .vvprof on disk.

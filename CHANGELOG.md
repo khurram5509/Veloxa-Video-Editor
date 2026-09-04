@@ -1,3 +1,35 @@
+# Veloxa Video Editor — V14.11.3
+
+**Security hardening + two bug fixes** from a full-system review (branch `VeloxaVD-V2`).
+
+## Security hardening
+
+| # | Change |
+|---|---|
+| Auto-updater integrity | The downloaded installer is now verified against the **SHA-256 that GitHub publishes per release asset** before it can be launched. A corrupted or tampered download fails the hash, is deleted, and is never executed. Older releases without a digest still install but are logged as unverified. |
+| Download URL allowlist | The updater refuses any asset URL that isn't **HTTPS on a GitHub host** — `github.com` / `*.githubusercontent.com` — so a manipulated API response can't point it at another server. Look-alike hosts such as `github.com.evil.com` are rejected. |
+| Imported-profile FFmpeg flags | Importing a profile that carries **custom FFmpeg flags** now warns you, shows the flags, and defaults to **removing** them. Such flags run on every encode and can read or write files, so you only keep them from a source you trust. |
+| Filename length cap | The output filename resolver (GUI and CLI) caps names at 200 characters, so a pattern like `{n:99999999}` can't produce an oversized name. |
+
+There was no shell injection, `eval`, or unsafe deserialization to fix — every FFmpeg command is built as an argument list.
+
+## Bug fixes
+
+- **Profile rename/delete now updates saved drafts.** Renaming or deleting a profile already rebased the *live queue*, but rows inside drafts saved on disk kept the old name, came back orphaned, and silently encoded with the live form's settings. Drafts are now rewritten alongside the queue.
+- **A failed silent startup update-check no longer erases the GPU-detection status line.** On an offline or rate-limited launch the status bar used to be overwritten ~1.5 s after showing which hardware encoders were detected.
+
+## QA hardening
+
+- New `VELOXA_SETTINGS_FILE` override lets a test run point the **entire settings store** (profiles, last-used profile, toggles — normally the Windows registry) at a throwaway file. Every window-constructing suite now sandboxes both this and `%APPDATA%`, with a guard that fails loudly if isolation is ever lost. This closes the gap that allowed an earlier dev-machine test run to overwrite real profiles.
+- 27 new security-hardening probes; 3 new draft-rebase probes; 2 new status-bar probes.
+
+## Downloads
+
+- **Windows:** ``Veloxa-Video-Editor-V14.11.3-Setup.exe`` (271 MB, --onedir)
+- **macOS:** ``Veloxa-Video-Editor-V14.11.3-macOS.dmg`` (~88 MB, ad-hoc signed)
+
+---
+
 # Veloxa Video Editor — V14.11.2
 
 **Data-loss fix.** Clearing the queue while a draft was open silently **erased that draft's saved contents**.

@@ -120,7 +120,7 @@ from .watch_folder import FolderWatcher
 from .docs import README_HTML, INSTALL_HTML, HELP_HTML, LICENSE_HTML
 from .persistence import (
     save_queue_state, load_queue_state, clear_queue_state, log_dir,
-    import_watermark_image,
+    import_watermark_image, app_qsettings,
 )
 from . import drafts as drafts_store
 from .profile_assets import (
@@ -209,7 +209,7 @@ class MainWindow(QMainWindow):
         self.resize(1320, 960)
         self.setAcceptDrops(True)
 
-        self.settings = QSettings("Veloxa-VD", "V10")
+        self.settings = app_qsettings()   # V14.11.3: test-overridable
         self.ffmpeg, self.ffprobe = find_ffmpeg()
         self.batch = None
 
@@ -311,7 +311,10 @@ class MainWindow(QMainWindow):
         # at startup against this physical machine — never baked into
         # the build — so the message is always machine-specific.
         try:
-            self.status_lbl.setText(self._describe_gpu_status())
+            # V14.11.3: remembered so a silently-failed startup update
+            # check can't overwrite this line (bug #3 in the 04/09 report).
+            self._gpu_status_text = self._describe_gpu_status()
+            self.status_lbl.setText(self._gpu_status_text)
         except Exception:
             pass
 
@@ -2577,7 +2580,12 @@ class MainWindow(QMainWindow):
         if not manual:
             # Auto-check stays silent, but says so in the status bar
             # rather than implying everything is current.
-            self.status_lbl.setText("Update check unavailable — " + reason)
+            # V14.11.3: never displace the GPU-detection summary -- it is
+            # the more useful line at startup. Only fill the status bar if
+            # it isn't showing that summary.
+            if self.status_lbl.text() != getattr(self, "_gpu_status_text", None):
+                self.status_lbl.setText(
+                    "Update check unavailable — " + reason)
             return
         releases_url = f"https://github.com/{VELOXA_GITHUB_REPO}/releases"
         msg = QMessageBox(self)
@@ -4028,6 +4036,15 @@ class MainWindow(QMainWindow):
                 self._schedule_preview()
             log.info("Rebased %d queue row(s): renames=%s deleted=%s",
                      touched, renames, deleted)
+        # V14.11.3: saved drafts on disk must follow the rename / delete
+        # too, otherwise their rows come back orphaned and encode with the
+        # live form silently. Independent of whether the live queue had
+        # any matching rows.
+        try:
+            touched += drafts_store.rebase_profile_names(
+                renames=renames, deleted=deleted, fallback=NO_PROFILE)
+        except Exception as exc:                 # never break a rename
+            log.warning("Draft rebase skipped: %s", exc)
         return touched
 
     def _refresh_per_row_combos_only(self):
