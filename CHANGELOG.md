@@ -1,3 +1,31 @@
+# Veloxa Video Editor — V14.11.4
+
+**Performance.** Low-resource hardening — the app stays responsive on slow CPUs, limited RAM, and slow storage (HDD / SD card / network drives).
+
+## What changed
+
+**1. Coalesced disk writes during a batch.** Every file start and finish used to write the *entire* queue to disk twice — the crash-recovery state **and** the autosave draft. On a large batch (hundreds of files) that's ~1,000 full serializations and disk flushes on the UI thread, which stutters badly on slow storage. Those writes are now coalesced: at most one write per ~1.5 s, with a guaranteed final write when the batch ends and when the window closes. Crash recovery is unaffected — at worst one already-encoded file is re-done after an unexpected shutdown.
+
+- Measured: a burst of 200 file events collapses to **1 disk write** (was 200).
+- Interactive edits (add / remove / reorder / assign profile) stay immediate — they're one write per action and don't benefit from batching.
+
+**2. Preview generation capped to one FFmpeg at a time.** Dragging a slider or changing settings quickly on a slow CPU used to spawn a pile of competing preview processes (only the stale *results* were discarded, not the stale *processes*). Now a single preview runs at a time and the latest change is coalesced into exactly one re-render when the slot frees — so previews stay smooth instead of burying the machine.
+
+No behaviour changes to encoding, output, or your saved data.
+
+## Tests
+
+- New `_qa/v1414_low_resource.py` (18 checks) — coalescing counts, batch/close flush wiring, and the one-preview-in-flight cap.
+- Verified with a real multi-file batch: coalesced persistence writes correct final state (all rows `done`), no dangling writes.
+- 785 automated checks across 16 suites; 99/99 real-FFmpeg end-to-end encodes.
+
+## Downloads
+
+- **Windows:** ``Veloxa-Video-Editor-V14.11.4-Setup.exe`` (271 MB, --onedir)
+- **macOS:** ``Veloxa-Video-Editor-V14.11.4-macOS.dmg`` (~88 MB, ad-hoc signed)
+
+---
+
 # Veloxa Video Editor — V14.11.3
 
 **Security hardening + two bug fixes** from a full-system review (branch `VeloxaVD-V2`).
