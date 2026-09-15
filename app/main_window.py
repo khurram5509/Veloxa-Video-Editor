@@ -276,6 +276,27 @@ class MainWindow(QMainWindow):
         # 200ms feels noticeably more responsive when scrubbing the seek bar.
         self.preview_timer.setInterval(200)
         self.preview_timer.timeout.connect(self._refresh_preview)
+        # V14.11.4 (low-resource): only ONE preview FFmpeg may be in flight
+        # at a time. Rapid slider/setting changes on a slow CPU would
+        # otherwise spawn a pile of competing preview processes (the seq
+        # guard discarded stale RESULTS but not the stale PROCESSES). When
+        # a render is already running we mark this and re-render once, to
+        # the latest state, when it finishes.
+        self._preview_pending = False
+
+        # V14.11.4 (low-resource): coalesce queue-state / draft persistence.
+        # During a batch, every file start + finish used to write the full
+        # queue (up to hundreds of items) to disk TWICE (queue_state.json +
+        # the autosave draft). On a 500-file batch that is ~1000 full
+        # serializations + fsyncs -- a real UI stutter on HDD / SD / network
+        # storage. The per-file sites now mark dirty and this timer flushes
+        # at most once every 1.5s; the batch-end + closeEvent paths force a
+        # final synchronous flush so crash recovery still sees current state.
+        self._persist_pending = False
+        self._persist_timer = QTimer(self)
+        self._persist_timer.setSingleShot(True)
+        self._persist_timer.setInterval(1500)
+        self._persist_timer.timeout.connect(self._flush_persist)
         # Cache for source dimensions / codec info so the preview info label
         # doesn't re-probe on every paint.
         self._src_w = 0
@@ -4888,6 +4909,16 @@ class MainWindow(QMainWindow):
         else:
             opts = live_opts
 
+        # V14.11.4 (low-resource): cap preview generation to ONE FFmpeg at
+        # a time. If a render is already running, remember that the latest
+        # state still needs a preview and bail -- _on_preview_done will
+        # re-render once, to the current state, when the running one ends.
+        # This stops a slow CPU from being buried under a pile of preview
+        # processes while the user drags a slider.
+        if self._preview_workers:
+            self._preview_pending = True
+            return
+
         # Spawn the FFmpeg call on a worker thread so the main loop never
         # blocks for the ~70 ms it takes per preview frame. Late results
         # from superseded workers are discarded by seq comparison.
@@ -4911,6 +4942,13 @@ class MainWindow(QMainWindow):
                 pass
             sender.wait(50)
             sender.deleteLater()
+        # V14.11.4: a change arrived while this render was in flight (we
+        # capped to one at a time). Now that the slot is free, render the
+        # latest state exactly once.
+        if self._preview_pending and not self._preview_workers:
+            self._preview_pending = False
+            self._refresh_preview()
+            return
         # Discard if a newer preview request has already been issued.
         if seq != self._latest_preview_seq:
             return
@@ -5894,7 +5932,7 @@ class MainWindow(QMainWindow):
             d.progress = 0.0
             d.error = ""
             self._refresh_item_label(item)
-        self._save_queue_state()
+        self._schedule_persist()   # V14.11.4: coalesce per-file writes
 
     def _on_file_progress(self, idx, pct):
         row = self._row_for_runner(idx)
@@ -5933,7 +5971,7 @@ class MainWindow(QMainWindow):
         log.info("UI: job %d retrying (attempt %d)", idx, attempt)
         self.status_lbl.setText(f"Retrying job {idx + 1} (attempt {attempt})")
         # Persist so a crash mid-retry leaves a recoverable state.
-        self._save_queue_state()
+        self._schedule_persist()   # V14.11.4: coalesce per-file writes
 
     def _on_file_finished(self, idx, ok, msg):
         row = self._row_for_runner(idx)
@@ -5982,7 +6020,7 @@ class MainWindow(QMainWindow):
         self._batch_completed += 1
         self._update_total_eta()
         self._recompute_overall()
-        self._save_queue_state()
+        self._schedule_persist()   # V14.11.4: coalesce per-file writes
 
     def _update_total_eta(self):
         """Estimate when the whole batch will finish based on average
@@ -6107,6 +6145,10 @@ class MainWindow(QMainWindow):
                 QSystemTrayIcon.MessageIcon.Information, 5000)
         log.info("Batch summary: %s", msg)
         self.batch = None
+        # V14.11.4: batch end forces an authoritative final write and
+        # cancels any pending coalesced flush so there's no double-write.
+        self._persist_pending = False
+        self._persist_timer.stop()
         self._save_queue_state()
         # Watch-folder cycle: if we're watching, move the just-completed
         # source files into the "done" subfolder, then drain any files
@@ -6127,6 +6169,28 @@ class MainWindow(QMainWindow):
         # V14.11.0: every queue mutation AND every completed video funnels
         # through here, so this single call covers both auto-save triggers.
         self._autosave_progress()
+
+    # ------------------------------------------- V14.11.4 coalesced persist
+
+    def _schedule_persist(self):
+        """Mark queue state dirty and flush at most once every 1.5s. Used
+        by the high-frequency batch callbacks (per-file start / finish /
+        retry) so a long batch doesn't write the full queue to disk on
+        every single file. Interactive edits keep calling
+        ``_save_queue_state`` directly -- they're user-paced (one write
+        per action) and benefit from being immediate."""
+        self._persist_pending = True
+        if not self._persist_timer.isActive():
+            self._persist_timer.start()
+
+    def _flush_persist(self):
+        """Write now if a coalesced persist is pending. Safe to call at any
+        time (batch end, window close); a no-op when nothing is dirty."""
+        if not self._persist_pending:
+            return
+        self._persist_pending = False
+        self._persist_timer.stop()
+        self._save_queue_state()
 
     # ================================================ V14.11.0 Save Progress
 
@@ -6606,6 +6670,10 @@ class MainWindow(QMainWindow):
             if r != QMessageBox.StandardButton.Yes:
                 e.ignore()
                 return
+
+        # V14.11.4: flush any coalesced queue-state / draft write so a
+        # close during the 1.5s debounce window can't lose the last change.
+        self._flush_persist()
 
         s = self.settings
         s.setValue("trim_start", self.trim_start.value())
